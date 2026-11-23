@@ -25,7 +25,8 @@ SystemHealer targets **WCAG 2.1 Level AA** compliance.
 | Primary button | #FFFFFF on #0EA5A4 (contrast ~3.2:1) | #0B0F17 on #2DD4BF (contrast ~8.5:1) |
 | Warning | #000000 on #f59e0b (4.5:1) | #000000 on #fbbf24 (4.8:1) |
 | Destructive | #ffffff on #ef4444 (4.5:1) | #000000 on #f87171 (4.8:1) |
-| Large text buttons: 3:1 is acceptable per WCAG AA for bold text ≥18px. |
+
+Note: For primary buttons, bold text ≥18px qualifies as "large text" under WCAG AA, where 3:1 contrast is acceptable.
 
 ### 3.1 Testing Color Contrast
 - WebAIM Contrast Checker
