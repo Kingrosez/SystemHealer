@@ -1,238 +1,100 @@
-# Scalability Guidelines
+# Scalability
 
 ## 1. Purpose
-This document describes scalability considerations and strategies for SystemHealer.
+This document defines what scalability means for SystemHealer, the dimensions in
+which the system must grow gracefully, and the strategies used to handle growth.
+Because SystemHealer is a **single-user Windows desktop tool**, scalability here is
+primarily **vertical** (larger drives, more files, longer history) — not horizontal
+(more users, more servers).
 
-## 2. Scalability Model
+## 2. Scope of Scalability
 
-SystemHealer is designed as a **single-user desktop application**. Scalability
-is measured as data volume and operation frequency, not concurrent users.
+| Dimension | Growth Vector | Concern |
+|-----------|---------------|---------|
+| Storage scanned | Small SSD → multi-TB HDD | Duplicate scan time, memory |
+| File count | Thousands → millions | Directory walk, hashing |
+| Repair history | Days → years | DB size, query time |
+| Log volume | Hundreds → millions of lines | DB size, UI rendering |
+| Concurrent operations | 1 → 2–3 (user multitasking) | Thread pools, cancellation |
+| Installed programs | Dozens → hundreds | List rendering, update scan |
 
-### 2.1 User Scale
-- Primary user: One person per installation
-- Maximum: Multiple installs in an organization
-- No multi-user support planned for v1
+## 3. Explicit Non-Goals
 
-### 2.2 Data Scale
-- Expected: Hundreds of repair operations logged
-- Maximum: Tens of thousands of history entries
-- Beyond that: Archive or purge old data
+SystemHealer is **not** designed to scale horizontally:
 
-## 3. Database Scalability
+- No multi-user support.
+- No remote/cloud deployment.
+- No distributed command execution.
+- No clustered database.
 
-### 3.1 Current Design (SQLite/Embedded)
-- File-based database
-- No connection pooling issues (single process)
-- Automatic file locking
+If any of these become requirements, they require a new architecture (see
+`docs/architecture/ARCHITECTURE_DECISIONS.md`).
 
-### 3.2 Growth Strategies
+## 4. Strategies by Dimension
 
-#### Data Archiving
-After 90 days, archive old repair history:
+### 4.1 Large Drives / Many Files
+- Streaming directory walk — never load a full tree into memory.
+- Two-pass duplicate detection (size grouping → hash candidates only).
+- Bounded thread pool for hashing (default 4 threads).
+- Configurable scan roots; default excludes `C:\Windows`, `$Recycle.Bin`,
+  and system restore folders.
+- Progress reporting via SSE so long scans don't appear frozen.
 
-```java
-@Scheduled(cron = "0 0 2 * * ?") // 2 AM daily
-public void archiveOldHistory() {
-    LocalDateTime cutoff = LocalDateTime.now().minusDays(90);
-    List<RepairHistory> oldRecords = historyRepository
-        .findByStartTimeBefore(cutoff, PageRequest.of(0, 1000));
+### 4.2 Growing Repair History
+- Paginated history API (`?page=&size=`); default page size 50.
+- Indexed queries on `created_at` and `status`.
+- Retention policy (configurable, default 90 days) with background pruning
+  (see `docs/operations/BACKUP_AND_RECOVERY.md`).
 
-    if (!oldRecords.isEmpty()) {
-        // Move to archive file
-        archiveRepository.saveAll(oldRecords);
-        historyRepository.deleteAll(oldRecords);
-    }
-}
-```
+### 4.3 Growing Log Volume
+- Per-operation log cap in memory (last 5,000 lines).
+- Batch inserts to DB (500 rows per batch).
+- Virtualized log viewer in the frontend for long logs.
+- Archived logs compressed or pruned per retention policy.
 
-#### Pagination for Large Lists
-Always use pagination in API responses:
+### 4.4 Multiple Concurrent Operations
+- Each long-running operation has a `taskId` and its own SSE channel.
+- Background thread pool with bounded size for command execution.
+- Cancel endpoint per task (`POST /api/tasks/{id}/cancel`).
+- UI shows per-task status; no global blocking.
 
-```java
-@GetMapping("/history")
-public Page<HistoryEntry> getHistory(@RequestParam(defaultValue = "0") int page) {
-    return historyRepository.findAll(PageRequest.of(page, 50));
-}
-```
+### 4.5 Installed Programs List
+- Virtualized list rendering once > 100 rows.
+- Cached registry scan with short TTL (e.g., 30 s) to avoid repeated reads.
+- Winget upgrade scan is throttled and cached.
 
-### 3.3 Indexing Strategy
-Indexes on:
-- `id` (primary key, auto)
-- `status` (query by status)
-- `start_time` (range queries)
-- `operation_type` (filter by type)
+## 5. Limits and Guardrails
 
-## 4. API Scalability
+| Limit | Default | Configurable |
+|-------|---------|--------------|
+| Max log lines in memory per task | 5,000 | Yes |
+| DB batch insert size | 500 | Yes |
+| Hashing thread pool size | 4 | Yes |
+| History page size | 50 | Yes |
+| Log retention (days) | 90 | Yes |
+| Max concurrent long tasks | 2 | Yes |
+| Duplicate scan max file size (skip above) | 4 GB | Yes |
 
-### 4.1 Rate Limiting
-For v1, rate limiting is not enforced locally. If cloud sync is added:
+These limits prevent runaway memory/CPU use and keep the app responsive.
 
-```java
-@RateLimiter(name = "api", fallbackMethod = "rateLimitFallback")
-@PostMapping("/repair")
-public ResponseEntity<?> runRepair(@RequestBody RepairRequest request) {
-    // ...
-}
-```
+## 6. When to Revisit This Document
 
-### 4.2 Request Throttling
-- Maximum concurrent operations: 1 (system repair is intensive)
-- Queue operations if needed (future enhancement)
+Revisit scalability if any of the following become true:
 
-## 5. Frontend Scalability
+- Users report scans taking > 5 minutes on typical drives.
+- DB size exceeds 1 GB for a typical user.
+- More than 2 concurrent long operations are commonly needed.
+- A multi-user or remote-management requirement emerges.
+- The app is ported to a new platform.
 
-### 5.1 Virtualized History List
-For displays with many entries:
+Each of these may require a new ADR.
 
-```tsx
-const VirtualizedHistory = () => (
-  <FixedSizeList
-    height={Math.min(window.innerHeight - 200, 800)}
-    itemCount={history.length}
-    itemSize={100}
-    itemData={history}
-  >
-    {HistoryRow}
-  </FixedSizeList>
-);
-```
+## 7. Related Documents
+- `docs/engineering/PERFORMANCE.md`
+- `docs/architecture/ARCHITECTURE.md`
+- `docs/architecture/ARCHITECTURE_DECISIONS.md`
+- `docs/operations/BACKUP_AND_RECOVERY.md`
+- `docs/database/DATABASE_DESIGN.md`
 
-### 5.2 Lazy Loading Data
-Only fetch data when needed:
-
-```tsx
-// Only fetch detail view when opened
-const DetailView = lazy(() => {
-  return import('./DetailView').then(module => ({
-    default: () => <DetailViewContent />
-  }));
-});
-```
-
-### 5.3 Search and Filtering
-Handle large datasets on frontend:
-
-```tsx
-const filteredHistory = useMemo(() => {
-  return history.filter(item => {
-    const matchesSearch = item.operationType.toLowerCase()
-      .includes(searchTerm.toLowerCase());
-    const matchesDate = dateFilter 
-      ? item.startTime >= dateFilter.start && item.startTime <= dateFilter.end
-      : true;
-    return matchesSearch && matchesDate;
-  });
-}, [history, searchTerm, dateFilter]);
-```
-
-## 6. Windows Integration Scalability
-
-### 6.1 Concurrent Operations Limit
-- Only one Windows system command at a time
-- Queue or queue-and-run pattern
-
-```java
-@Service
-public class CommandQueue {
-    private final ExecutorService executor = Executors.newSingleThreadExecutor();
-
-    public CompletableFuture<CommandResult> submit(CommandRequest request) {
-        return CompletableFuture.supplyAsync(() -> execute(request), executor);
-    }
-
-    public boolean isRunning() {
-        return !executor.isShutdown();
-    }
-}
-```
-
-### 6.2 Command Duration Management
-- Set timeouts for all commands
-- Allow cancellation
-- Provide cancel UI
-
-```java
-public CommandResult executeWithTimeout(String... args) throws TimeoutException {
-    Process process = new ProcessBuilder(args).start();
-    if (!process.waitFor(60, TimeUnit.SECONDS)) {
-        process.destroyForcibly();
-        throw new TimeoutException("Command timed out");
-    }
-    return new CommandResult(process.exitValue(), stdout, stderr);
-}
-```
-
-## 7. Future Scalability Enhancements
-
-### 7.1 Optional Cloud Sync (Post-v1)
-- Sync history to cloud
-- Cross-device restore
-- Backup and recovery
-
-### 7.2 Multi-Device Management (Post-v1)
-- Manage multiple PCs from one interface
-- Network deployment
-
-### 7.3 Enterprise Features (Post-v1)
-- Centralized logging
-- Deployment policies
-- Remote management
-
-## 8. Monitoring Scalability
-
-### 8.1 Key Metrics to Track
-
-| Metric | Threshold | Alert |
-|--------|-----------|-------|
-| Database size | < 100MB | Warn user |
-| History entries | < 100k | Recommend archive |
-| UI load time | < 1s | Investigate |
-
-### 8.2 Memory Monitoring
-Track memory usage during operations:
-
-```java
-Runtime runtime = Runtime.getRuntime();
-long usedMemory = runtime.totalMemory() - runtime.freeMemory();
-if (usedMemory > 500_000_000) { // 500MB
-    log.warn("High memory usage: {} MB", usedMemory / 1024 / 1024);
-}
-```
-
-## 9. Performance vs. Scalability Trade-offs
-
-| Feature | Performance | Scalability | Decision |
-|---------|-------------|-------------|----------|
-| In-memory search | Fast | Limited to loaded data | Use for < 1000 items |
-| Database query | Moderate | Scales well | Use for all queries |
-| Full history render | Slow | Memory intensive | Virtualized list |
-| Real-time log streaming | Fast | Scales with CPU | SSE streaming |
-
-## 10. Archive Strategy
-
-When history exceeds threshold:
-
-1. **Automatic Archive**: Move entries older than 1 year to `history-archive.db`
-2. **Manual Archive**: User triggers export to JSON
-3. **Purge**: User can delete archived data
-
-```java
-public void archiveHistory(int years = 1) {
-    LocalDateTime cutoff = LocalDateTime.now().minusYears(years);
-    List<RepairHistory> oldEntries = historyRepository.findByStartTimeBefore(cutoff);
-    
-    try (ArchiveWriter writer = new ArchiveWriter(archivePath)) {
-        writer.write(oldEntries);
-        historyRepository.deleteAll(oldEntries);
-    }
-}
-```
-
-## 11. Limits and Boundaries
-
-Current hard limits:
-- Database: SQLite limit (~140TB file size, practical limit: 10GB)
-- History: No hard limit, but UI performance degrades > 100k entries
-- Files monitored: Limited by Windows enumeration speed
-
-These limits are far beyond expected usage and unlikely to be hit in v1.
+## 8. Status
+Draft — v0.1
