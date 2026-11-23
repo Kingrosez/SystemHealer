@@ -1,234 +1,238 @@
 # Integration Guide
 
 ## 1. Purpose
-This guide explains how to consume the SystemHealer API.
+This guide explains how the React frontend integrates with the Spring Boot backend
+defined in `API_CONTRACT.md`. It covers the API client, TanStack Query patterns,
+SSE streaming, error normalization, and the confirmation-token flow.
 
-## 2. Base URL
-All endpoints are available at `http://localhost:8080/api/`.
+## 2. Base Setup
 
-## 3. Using the Frontend Client
+- Backend base URL: `http://127.0.0.1:8080/api`
+- The URL is read from `VITE_API_BASE_URL` (defaults to the above in dev).
+- All requests are JSON unless noted (SSE uses `text/event-stream`).
 
-### 3.1 API Client Setup
+`.env.development`:
 
-The frontend uses TanStack Query with Axios:
-
-```ts
-// src/api/client.ts
-import axios from 'axios';
-import { QueryClient } from '@tanstack/react-query';
-
-export const api = axios.create({
-  baseURL: 'http://localhost:8080/api',
-  timeout: 30000,
-});
-
-export const queryClient = new QueryClient();
+```text
+VITE_API_BASE_URL=http://127.0.0.1:8080/api
 ```
 
-### 3.2 Example: Fetch History
+## 3. API Client (`src/lib/api.ts`)
+
+All API calls go through a single typed client. Components never call `fetch`
+directly.
+
+### 3.1 Error Normalization
+
+```ts
+export type ApiError = {
+  status: number;
+  code: string;
+  message: string;
+  userMessage: string;
+  traceId?: string;
+};
+
+export async function apiFetch<T>(
+  path: string,
+  init?: RequestInit
+): Promise<T> {
+  const res = await fetch(`${import.meta.env.VITE_API_BASE_URL}${path}`, {
+    headers: { 'Content-Type': 'application/json', ...(init?.headers ?? {}) },
+    ...init,
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw {
+      status: res.status,
+      code: body.code ?? 'UNKNOWN',
+      message: body.message ?? res.statusText,
+      userMessage: body.userMessage ?? 'Something went wrong. Please try again.',
+      traceId: body.traceId,
+    } satisfies ApiError;
+  }
+  return res.json() as Promise<T>;
+}
+```
+
+### 3.2 Typed Endpoint Helpers
+
+```ts
+export const api = {
+  health: () => apiFetch<Health>('/health'),
+  systemInfo: () => apiFetch<SystemInfo>('/system/info'),
+  repair: {
+    options: () => apiFetch<RepairOptions>('/repair/options'),
+    start: (body: StartRepairRequest) =>
+      apiFetch<StartTaskResponse>('/repair/start', {
+        method: 'POST',
+        body: JSON.stringify(body),
+      }),
+    cancel: (taskId: string) =>
+      apiFetch<void>(`/repair/${taskId}/cancel`, { method: 'POST' }),
+    history: (page = 0, size = 50) =>
+      apiFetch<Page<RepairHistoryItem>>(`/repair/history?page=${page}&size=${size}`),
+  },
+  // ...one namespace per module
+};
+```
+
+## 4. TanStack Query Patterns
+
+### 4.1 Query Client Setup
 
 ```tsx
-// src/api/hooks.ts
-import { useQuery } from '@tanstack/react-query';
-import { api } from './client';
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 30_000,
+      retry: 1,
+      refetchOnWindowFocus: false,
+    },
+  },
+});
+```
 
-export function useHistory() {
+### 4.2 Read Queries
+
+```tsx
+export function useRepairHistory(page = 0) {
   return useQuery({
-    queryKey: ['history'],
-    queryFn: async () => {
-      const response = await api.get<{totalElements: number; content: HistoryEntry[]}>(
-        '/history'
-      );
-      return response.data;
+    queryKey: ['repair', 'history', page],
+    queryFn: () => api.repair.history(page),
+  });
+}
+```
+
+### 4.3 Mutations
+
+```tsx
+export function useStartRepair() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: StartRepairRequest) => api.repair.start(body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['repair', 'history'] });
     },
   });
 }
-
-// Usage in component
-function HistoryList() {
-  const { data, isLoading, error } = useHistory();
-
-  if (isLoading) return <Spinner />;
-  if (error) return <ErrorMessage />;
-
-  return (
-    <ul>
-      {data?.content.map(item => (
-        <li key={item.id}>{item.operationType}</li>
-      ))}
-    </ul>
-  );
-}
 ```
 
-## 4. Using SSE for Log Streaming
+### 4.4 Query Key Conventions
 
-### 4.1 Setup
+| Module | Key pattern |
+|--------|-------------|
+| Repair | `['repair', 'options']`, `['repair','history',page]` |
+| Programs | `['programs', {search,page}]` |
+| Cleaner | `['cleaner','scan',scanId]`, `['cleaner','duplicates',page]` |
+| Updater | `['updater','scan']` |
+| Recovery | `['recovery','restorePoints']` |
+| Settings | `['settings']` |
+
+## 5. SSE Streaming
+
+Long-running tasks return a `taskId` and a `streamUrl`. The frontend opens an
+`EventSource` and listens for `log`, `progress`, and `complete` events.
 
 ```ts
-// src/api/logs.ts
-export function useRepairLogs(id: number) {
-  const [logs, setLogs] = useState<string[]>([]);
-  const [isComplete, setIsComplete] = useState(false);
+export function useTaskStream(taskId: string | null) {
+  const [lines, setLines] = useState<LogLine[]>([]);
+  const [status, setStatus] = useState<'idle'|'running'|'done'>('idle');
 
   useEffect(() => {
-    const eventSource = new EventSource(
-      `http://localhost:8080/api/repair/${id}/logs`
+    if (!taskId) return;
+    setStatus('running');
+    const es = new EventSource(
+      `${import.meta.env.VITE_API_BASE_URL}/tasks/${taskId}/stream`
     );
-
-    eventSource.onmessage = (event) => {
-      setLogs(prev => [...prev, event.data]);
-    };
-
-    eventSource.addEventListener('complete', () => {
-      setIsComplete(true);
-      eventSource.close();
+    es.addEventListener('log', (e) => {
+      setLines((prev) => [...prev, JSON.parse((e as MessageEvent).data)]);
     });
-
-    eventSource.onerror = () => {
-      eventSource.close();
+    es.addEventListener('progress', (e) => {
+      // update progress bar
+    });
+    es.addEventListener('complete', (e) => {
+      setStatus('done');
+      es.close();
+    });
+    es.onerror = () => {
+      setStatus('done');
+      es.close();
     };
+    return () => es.close();
+  }, [taskId]);
 
-    return () => eventSource.close();
-  }, [id]);
-
-  return { logs, isComplete };
+  return { lines, status };
 }
 ```
 
-## 5. Mutations with Confirmation
+Rules:
+- Always close the `EventSource` on unmount and on `complete`.
+- Cap rendered log lines (e.g., last 5,000) to avoid UI slowdown.
+- Show a "connection lost" banner if `onerror` fires unexpectedly.
 
-### 5.1 Two-Step Pattern
+## 6. Confirmation Token Flow (Destructive Actions)
+
+Destructive endpoints are two-step. The frontend must:
+
+1. Call `.../preview` → receive items + `confirmToken`.
+2. Show a confirmation dialog with the preview.
+3. On confirm, call `.../execute` with the token and selected items.
 
 ```ts
-// src/api/repair.ts
-export async function previewSfc() {
-  const response = await api.post<{items: unknown[]; confirmToken: string}>(
-    '/repair/sfc/preview'
-  );
-  return response.data;
-}
-
-export async function executeSfc(token: string) {
-  return await api.post('/repair/sfc/execute', { token });
-}
-```
-
-### 5.2 Usage with Mutation
-
-```tsx
-function runSfc() {
-  const mutation = useMutation({
-    mutationFn: executeSfc,
-    onSuccess: () => {
-      toast.success('SFC started');
-      queryClient.invalidateQueries(['history']);
-    },
-  });
-
-  const handlePreview = async () => {
-    const { items, confirmToken } = await previewSfc();
-    if (window.confirm(`This will affect ${items.length} files. Proceed?`)) {
-      mutation.mutate(confirmToken);
-    }
-  };
-
-  return (
-    <Button onClick={handlePreview} disabled={mutation.isPending}>
-      {mutation.isPending ? 'Running...' : 'Run SFC'}
-    </Button>
-  );
-}
-```
-
-## 6. Error Handling
-
-### 6.1 Global Error Interceptor
-
-```ts
-api.interceptors.response.use(
-  response => response,
-  error => {
-    if (error.response?.data?.code) {
-      // Known error from backend
-      showToast({
-        title: error.response.data.code,
-        description: error.response.data.message,
-        variant: 'destructive',
-      });
-    } else if (error.request) {
-      // No response received
-      showToast({
-        title: 'Network Error',
-        description: 'Unable to connect to the service. Is it running?',
-        variant: 'destructive',
-      });
-    }
-    return Promise.reject(error);
-  }
-);
-```
-
-## 7. Manual API Calls (cURL)
-
-### 7.1 Get History
-
-```bash
-curl -X GET "http://localhost:8080/api/history?page=0&size=50" \
-  -H "Accept: application/json"
-```
-
-### 7.2 Run SFC
-
-```bash
-curl -X POST "http://localhost:8080/api/repair/sfc" \
-  -H "Content-Type: application/json" \
-  -d '{"createRestorePoint": true}'
-```
-
-### 7.3 Stream Logs
-
-```bash
-curl -X GET "http://localhost:8080/api/repair/123/logs" \
-  -H "Accept: text/event-stream"
-```
-
-## 8. Authentication (Future)
-
-When auth is added:
-
-```ts
-api.interceptors.request.use(config => {
-  const token = localStorage.getItem('authToken');
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
-  }
-  return config;
+const preview = await api.cleaner.preview({ roots, categories });
+// show dialog with preview.items and preview.totalSizeBytes
+await api.cleaner.execute({
+  confirmToken: preview.confirmToken,
+  paths: selectedPaths,
 });
 ```
 
-## 9. Rate Limiting
+Rules:
+- Never auto-confirm — always require a user click.
+- Tokens expire in 5 minutes; if expired, re-preview.
+- If the server returns 409 `WOULD_DELETE_ALL_COPIES`, show a warning and keep
+  at least one file selected per group.
 
-Current implementation:
-- No rate limiting in v1
-- Concurrent operations limited in backend (single process)
+## 7. Error Handling in the UI
 
-## 10. Testing with Mock API
+- Every query/mutation shows loading, error, and empty states.
+- Display `userMessage` from `ApiError`, never `message` or stack traces.
+- Provide a "Retry" button on error states.
+- Log the `traceId` in the console (dev only) for debugging.
 
-Use MSW (Mock Service Worker) for frontend tests:
-
-```ts
-// src/mocks/handlers.ts
-import { rest } from 'msw';
-
-export const handlers = [
-  rest.get('/api/history', (req, res, ctx) => {
-    return res(
-      ctx.json({
-        content: [{ id: 1, operationType: 'SFC', status: 'COMPLETED' }],
-        totalElements: 1,
-      })
-    );
-  }),
-];
+```tsx
+if (query.isLoading) return <Skeleton />;
+if (query.isError) {
+  return (
+    <ErrorPanel
+      message={(query.error as ApiError).userMessage}
+      onRetry={() => query.refetch()}
+    />
+  );
+}
+if (!query.data?.items.length) return <EmptyState />;
 ```
+
+## 8. Environment & CORS
+
+- Backend CORS allows `http://localhost:5173` (Vite dev) and the packaged origin.
+- In production (static files served by Spring Boot), requests are same-origin.
+- No credentials/cookies are used in v1.
+
+## 9. Testing the Integration
+
+- Mock the API client with MSW (Mock Service Worker) in component tests.
+- Contract tests: validate response shapes against fixtures generated from
+  `API_CONTRACT.md`.
+- Manual smoke test: `GET /api/health` from the browser should return
+  `{"status":"ok"}`.
+
+## 10. Related Documents
+- `docs/api/API_CONTRACT.md`
+- `docs/engineering/ERROR_HANDLING.md`
+- `docs/frontend/UI_UX_GUIDELINES.md`
+- `docs/architecture/TECH_STACK.md`
+
+## 11. Status
+Draft — v0.1
