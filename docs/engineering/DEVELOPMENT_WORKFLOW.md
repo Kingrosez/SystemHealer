@@ -95,7 +95,7 @@ cd frontend
 npm run dev
 ```
 
-Available at `http://localhost:3000`.
+Available at `http://localhost:5173`.
 
 ### 5.2 Development Commands
 ```bash
@@ -157,9 +157,9 @@ class MyRepositoryTest {
 
 ### 7.1 Adding an Endpoint
 1. Define contract in `docs/api/API_CONTRACT.md`.
-2. Create DTOs in `backend/src/main/java/com/kingrosez/dto/`.
-3. Update service layer in `backend/src/main/java/com/kingrosez/service/`.
-4. Add controller in `backend/src/main/java/com/kingrosez/api/`.
+2. Create DTOs in `backend/src/main/java/com/systemhealer/dto/`.
+3. Update service layer in `backend/src/main/java/com/systemhealer/service/`.
+4. Add controller in `backend/src/main/java/com/systemhealer/api/`.
 5. Write tests.
 
 ### 7.2 Testing APIs

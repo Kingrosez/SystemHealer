@@ -38,12 +38,12 @@ cd backend
 Copy `frontend/dist/*` into `backend/src/main/resources/static/` before packaging,
 or use the Maven frontend plugin. The resulting JAR serves both API and UI.
 
-```bash
-# Example combined build
-cd frontend && npm ci && npm run build
-rm -rf ../backend/src/main/resources/static/*
-cp -r dist/* ../backend/src/main/resources/static/
-cd ../backend && ./mvnw clean package
+```powershell
+# PowerShell
+cd frontend; npm ci; npm run build
+Remove-Item -Recurse -Force ..\backend\src\main\resources\static\*
+Copy-Item -Recurse -Force dist\* ..\backend\src\main\resources\static\
+cd ..\backend; .\mvnw.cmd clean package
 ```
 
 ## 4. Runtime Configuration
