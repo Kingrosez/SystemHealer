@@ -13,7 +13,7 @@
 | Root-Level Files | 1 |
 | Documentation Files | 34 |
 | Status | All files present as scaffold |
-| Content Status | Complete drafts |
+| Content Status | Mixed: some complete, some scaffold |
 
 ---
 
@@ -51,7 +51,7 @@
 ### Database Documentation
 | File | Lines | Status | Purpose |
 |------|-------|--------|---------|
-| docs/database/DATABASE_DESIGN.md | ~200 | Complete draft | High-level data model overview (links to detailed schema) |
+| docs/database/DATABASE_DESIGN.md | 446 | Complete draft | Full SQLite schema with 11 tables |
 | docs/architecture/DATABASE_DESIGN.md | 447 | Complete draft | 11-table SQLite schema |
 
 ### Security Documentation
