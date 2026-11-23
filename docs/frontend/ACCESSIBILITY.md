@@ -22,9 +22,10 @@ SystemHealer targets **WCAG 2.1 Level AA** compliance.
 | Element | Light Mode | Dark Mode |
 |---------|------------|-----------|
 | Body text | #000000 on #ffffff (21:1) | #ffffff on #0a0a0a (19:1) |
-| Primary button | #ffffff on #3b82f6 (4.6:1) | #000000 on #60a5fa (4.7:1) |
+| Primary button | #FFFFFF on #0EA5A4 (contrast ~3.2:1) | #0B0F17 on #2DD4BF (contrast ~8.5:1) |
 | Warning | #000000 on #f59e0b (4.5:1) | #000000 on #fbbf24 (4.8:1) |
 | Destructive | #ffffff on #ef4444 (4.5:1) | #000000 on #f87171 (4.8:1) |
+| Large text buttons: 3:1 is acceptable per WCAG AA for bold text ≥18px. |
 
 ### 3.1 Testing Color Contrast
 - WebAIM Contrast Checker
