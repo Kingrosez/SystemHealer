@@ -1,325 +1,187 @@
-# Configuration Guide
+# Configuration
 
 ## 1. Purpose
-This document describes how to configure SystemHealer for different environments and use cases.
+This document defines how SystemHealer is configured: Spring profiles,
+`application.yml` structure, environment variable overrides, user-facing settings,
+and defaults. It is the reference for changing runtime behavior without code.
 
-## 2. Configuration Sources
+## 2. Configuration Sources (Priority Order)
 
-Configuration is loaded in the following order (later sources override earlier ones):
+1. Command-line arguments (`--server.port=8081`)
+2. Environment variables (`SERVER_PORT=8081`)
+3. Profile-specific `application-{profile}.yml`
+4. Base `application.yml`
+5. Hardcoded defaults in code
 
-1. Default values (embedded in JAR)
-2. `application.yml` (classpath)
-3. Environment-specific `application-{profile}.yml`
-4. Environment variables
-5. Command-line arguments
+Later sources override earlier ones only if earlier ones are absent.
 
-## 3. Application.yml Structure
+## 3. Spring Profiles
+
+| Profile | Purpose | DB | Logging |
+|---------|---------|----|---------|
+| `dev` (default) | Local development | H2 in-memory | Console, DEBUG optional |
+| `prod` | Installed app | SQLite file | File + console, INFO |
+| `test` | Automated tests | H2 in-memory | Console, WARN |
+
+Activate: `SPRING_PROFILES_ACTIVE=prod` or `--spring.profiles.active=prod`.
+
+## 4. Base Configuration (`application.yml`)
 
 ```yaml
-# Server configuration
 server:
-  port: ${SYSTEMHEALER_PORT:8080}
+  port: 8080
+  address: 127.0.0.1
 
-# Application metadata
 spring:
   application:
-    name: SystemHealer
+    name: systemhealer
+  jackson:
+    serialization:
+      write-dates-as-timestamps: false
+  jpa:
+    open-in-view: false
 
-# Database configuration
+systemhealer:
+  db:
+    path: ${SYSTEMHEALER_DB_PATH:${APPDATA}/SystemHealer/systemhealer.db}
+  logs:
+    retention-days: 90
+  scan:
+    default-roots:
+      - ${USERPROFILE}
+    exclude:
+      - C:\\Windows
+      - C:\\$Recycle.Bin
+  tasks:
+    max-concurrent: 2
+    log-buffer-lines: 5000
+  duplicates:
+    hash-threads: 4
+    min-size-bytes: 1024
+    max-file-size-bytes: 4294967296
+  restore-point:
+    create-by-default: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: never
+```
+
+## 5. Profile Overrides
+
+### 5.1 `application-dev.yml`
+
+```yaml
 spring:
   datasource:
-    url: ${SYSTEMHEALER_DB_URL:jdbc:sqlite:/data/systemhealer.db}
+    url: jdbc:h2:mem:systemhealer;DB_CLOSE_DELAY=-1
+    driver-class-name: org.h2.Driver
+  jpa:
+    hibernate:
+      ddl-auto: validate
+  flyway:
+    enabled: true
+
+logging:
+  level:
+    com.systemhealer: DEBUG
+```
+
+### 5.2 `application-prod.yml`
+
+```yaml
+spring:
+  datasource:
+    url: jdbc:sqlite:${systemhealer.db.path}
     driver-class-name: org.sqlite.JDBC
   jpa:
     hibernate:
       ddl-auto: validate
-    show-sql: false
-
-  # Flyway database migrations
   flyway:
-    locations: classpath:db/migration
-    baseline-on-migrate: true
+    enabled: true
 
-# Logging configuration
 logging:
   level:
-    com.kingrosez: ${SYSTEMHEALER_LOG_LEVEL:INFO}
+    com.systemhealer: INFO
   file:
-    name: ${SYSTEMHEALER_LOG_PATH:%APPDATA%\\SystemHealer\\logs\\application.log}
-
-# Actuator endpoints
-management:
-  endpoints:
-    web:
-      exposure:
-        include: health,info,metrics,loggers
-  endpoint:
-    health:
-      show-details: always
-
-# Application-specific settings
-systemhealer:
-  # History retention in days
-  historyRetentionDays: ${SYSTEMHEALER_HISTORY_DAYS:90}
-  # Maximum concurrent operations
-  maxConcurrentOperations: ${SYSTEMHEALER_MAX_CONCURRENT:2}
-  # Default restore point description prefix
-  restorePointPrefix: "SystemHealer"
+    name: ${APPDATA}/SystemHealer/logs/systemhealer.log
 ```
 
-## 4. Environment Variables
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `SYSTEMHEALER_PORT` | 8080 | HTTP server port |
-| `SYSTEMHEALER_DB_URL` | sqlite DB path | Database connection URL |
-| `SYSTEMHEALER_LOG_LEVEL` | INFO | Root logging level |
-| `SYSTEMHEALER_LOG_PATH` | `%APPDATA%` | Log file path |
-| `SYSTEMHEALER_HISTORY_DAYS` | 90 | Days to retain history |
-| `SYSTEMHEALER_MAX_CONCURRENT` | 2 | Max parallel operations |
-| `SYSTEMHEALER_RESTORE_POINT_PREFIX` | SystemHealer | Restore point description prefix |
-| `SYSTEMHEALER_DATA_PATH` | `%APPDATA%\SystemHealer` | Data directory |
-
-## 5. Profiles
-
-### 5.1 Development Profile
-Activated with `-Dspring.profiles.active=dev` or `spring.profiles.active=dev` environment variable.
+### 5.3 `application-test.yml`
 
 ```yaml
-# application-dev.yml
 spring:
   datasource:
-    url: jdbc:h2:mem:systemhealer;DB_CLOSE_DELAY=-1
+    url: jdbc:h2:mem:testdb;DB_CLOSE_DELAY=-1
   jpa:
     hibernate:
-      ddl-auto: create
-    show-sql: true
+      ddl-auto: create-drop
+  flyway:
+    enabled: false
 
 logging:
   level:
-    com.kingrosez: DEBUG
-    org.hibernate.SQL: DEBUG
-
-management:
-  endpoints:
-    web:
-      exposure:
-        include: "*"
+    root: WARN
 ```
 
-### 5.2 Production Profile
-```yaml
-# application-prod.yml
-spring:
-  datasource:
-    url: jdbc:sqlite:/data/systemhealer.db
-  jpa:
-    hibernate:
-      ddl-auto: validate
+## 6. Environment Variables
 
-logging:
-  level:
-    com.kingrosez: WARN
-```
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `SERVER_PORT` | 8080 | Backend port |
+| `SPRING_PROFILES_ACTIVE` | dev | Active profile |
+| `SYSTEMHEALER_DB_PATH` | `%APPDATA%\SystemHealer\systemhealer.db` | SQLite path |
+| `LOGGING_LEVEL_ROOT` | INFO | Root log level |
+| `VITE_API_BASE_URL` (frontend build) | `http://127.0.0.1:8080/api` | API base |
 
-## 6. External Configuration
+Rules:
+- No secrets are stored in env vars in v1 (none needed yet).
+- `.env` files are gitignored; use OS env or `application-*.yml` locally.
 
-### 6.1 Configuration File
-Place `application.yml` in:
-- `%APPDATA%\SystemHealer\application.yml` (user-specific)
-- `%PROGRAMDATA%\SystemHealer\application.yml` (system-wide)
+## 7. User-Facing Settings
 
-### 6.2 Command Line
-```bash
-java -jar systemhealer.jar --server.port=9090 --systemhealer.historyRetentionDays=180
-```
+Stored in the `app_settings` table (key-value JSON). Editable via Settings UI.
 
-### 6.3 System Properties
-```bash
-java -Dserver.port=9090 -Dsystemhealer.historyRetentionDays=180 -jar systemhealer.jar
-```
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `logRetentionDays` | 90 | Days to keep logs |
+| `defaultScanRoots` | `[%USERPROFILE%]` | Roots used by cleaner/duplicate scan |
+| `theme` | `system` | `light`, `dark`, `system` |
+| `createRestorePointByDefault` | `true` | Auto restore point before risky ops |
+| `duplicateMinSizeBytes` | 1024 | Skip tiny files |
+| `maxConcurrentTasks` | 2 | Concurrent long tasks |
 
-## 7. Advanced Configuration
+Rules:
+- Settings override config defaults at runtime (except infrastructure like port/DB).
+- Invalid values are rejected with a clear message.
+- Changes take effect immediately where feasible; otherwise on restart (documented).
 
-### 7.1 Custom Data Directory
-```bash
-# Set data directory for all files
-SYSTEMHEALER_DATA_PATH=C:\CustomPath
-```
+## 8. Configuration Validation
 
-Directory structure created:
-```
-C:\CustomPath\
-├── systemhealer.db          # SQLite database
-├── logs\
-│   ├── application.log
-│   └── error.log
-└── backups\                 # Future: automatic backups
-```
+- All config values validated at startup (`@ConfigurationProperties` + `@Validated`).
+- Fail fast on invalid config with a clear startup error.
+- Log the effective (non-sensitive) config at INFO on startup.
 
-### 7.2 Logging Configuration
-```yaml
-# logback-spring.xml
-<configuration>
-  <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
-    <file>${SYSTEMHEALER_LOG_PATH}/application.log</file>
-    <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
-      <fileNamePattern>${SYSTEMHEALER_LOG_PATH}/application.%d{yyyy-MM-dd}.%i.gz</fileNamePattern>
-      <maxFileSize>10MB</maxFileSize>
-      <maxHistory>30</maxHistory>
-    </rollingPolicy>
-    <encoder>
-      <pattern>%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n</pattern>
-    </encoder>
-  </appender>
-</configuration>
-```
+## 9. What Is NOT Configurable
 
-### 7.3 Database Connection Pool
-```yaml
-spring:
-  datasource:
-    hikari:
-      maximum-pool-size: 5
-      minimum-idle: 2
-      connection-timeout: 30000
-      idle-timeout: 600000
-      max-lifetime: 1800000
-```
+To protect security and consistency:
 
-## 8. Security Configuration
+- Bind address (always `127.0.0.1`).
+- CORS origin (fixed to frontend origin).
+- Restore-point-before-high-risk (can be defaulted off by user, but the rule
+  remains in code; disabling requires explicit UI toggle).
+- Command allowlist.
 
-### 8.1 Network Binding
-By default, server binds to localhost only. To expose to network:
+## 10. Related Documents
+- `docs/operations/DEPLOYMENT.md`
+- `docs/operations/OBSERVABILITY.md`
+- `docs/api/API_CONTRACT.md`
+- `docs/database/DATABASE_DESIGN.md`
 
-```yaml
-server:
-  address: 0.0.0.0
-```
-
-Warning: Only use in trusted networks. The API is not secured for external access.
-
-### 8.2 CORS (Future)
-```yaml
-spring:
-  cors:
-    allowed-origins: http://localhost:5173
-    allowed-methods: GET,POST,PUT,DELETE
-```
-
-## 9. Performance Tuning
-
-### 9.1 Thread Pool Configuration
-```yaml
-systemhealer:
-  executor:
-    core-pool-size: 2
-    max-pool-size: 4
-    queue-capacity: 10
-```
-
-### 9.2 Database Write-Ahead Logging
-```yaml
-spring:
-  datasource:
-    url: jdbc:sqlite:/data/systemhealer.db?_journal_mode=WAL
-```
-
-## 10. Migration Configuration
-
-### 10.1 Database Migration Path
-By default, migrations are in `classpath:db/migration/`.
-
-For custom location:
-```yaml
-spring:
-  flyway:
-    locations: filesystem:/path/to/migrations
-```
-
-### 10.2 Baseline on Migrate
-If upgrading from non-Flyway managed database:
-```yaml
-spring:
-  flyway:
-    baseline-on-migrate: true
-    baseline-version: 1.0
-    baseline-description: "Initial baseline"
-```
-
-## 11. Monitoring Configuration
-
-### 11.1 Disable Actuator
-```yaml
-management:
-  endpoints:
-    web:
-      exposure:
-        include: none
-```
-
-### 11.2 Enable Additional Endpoints
-```yaml
-management:
-  endpoints:
-    web:
-      exposure:
-        include: health,info,metrics,loggers,env,mappings
-```
-
-## 12. Testing Configuration
-
-### 12.1 Override for Tests
-```yaml
-# src/test/resources/application-test.yml
-spring:
-  datasource:
-    url: jdbc:h2:mem:test
-  jpa:
-    hibernate:
-      ddl-auto: create
-```
-
-### 12.2 Test Properties
-```bash
-# System properties for tests
--Dspring.profiles.active=test
--Dspring.datasource.url=jdbc:h2:mem:test
-```
-
-## 13. Configuration Validation
-
-### 13.1 Required Configuration
-- Database path must be writable
-- Log directory must be writable
-- Sufficient disk space for database and logs
-
-### 13.2 Validation Rules
-```java
-@ConfigurationProperties(prefix = "systemhealer")
-@Validated
-public class SystemHealerProperties {
-
-    @Min(1)
-    @Max(365)
-    private int historyRetentionDays = 90;
-
-    @Min(1)
-    @Max(10)
-    private int maxConcurrentOperations = 2;
-
-    @NotBlank
-    private String restorePointPrefix = "SystemHealer";
-
-    // getters and setters
-}
-```
-
-## 14. Common Configuration Issues
-
-| Symptom | Cause | Solution |
-|---------|-------|----------|
-| "Cannot open database" | Directory doesn't exist or no write permission | Create directory and grant write access |
-| "Port already in use" | Another process using port | Change `server.port` or stop conflicting service |
-| "Log file not created" | Log path inaccessible | Check `SYSTEMHEALER_LOG_PATH` |
-| "Operations too slow" | Database locked or disk full | Check disk space, close other instances |
+## 11. Status
+Draft — v0.1

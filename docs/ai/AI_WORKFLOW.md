@@ -97,11 +97,14 @@ Issue: SFC operations timeout after 30 seconds, but some require more time
 ## 6. Prompt Engineering Best Practices
 
 ### 6.1 Effective Prompts
-```markdown
+
 Good:
+```
 "Add a new endpoint GET /api/system/status that returns CPU and memory usage"
+```
 
 Bad:
+```
 "Add system monitoring"
 ```
 
@@ -226,3 +229,53 @@ When asking AI about:
 - New developers learn patterns from AI
 - AI helps understand existing codebase
 - Knowledge transfer through AI
+
+## 15. The Operating Loop
+
+### 15.1 Task Dispatch
+When a developer identifies work:
+1. Create a fresh prompt with clear scope
+2. Include file paths, existing patterns, test requirements
+3. Specify the exact deliverable expected
+4. Set constraints (branch naming, commit format, etc.)
+
+### 15.2 Implementation Cycle
+```
+[Task Brief] → AI generates code → Developer reviews → Tests pass → Commit → Push
+```
+
+### 15.3 Review Gate
+Before any commit:
+- [ ] Code compiles without errors
+- [ ] All tests pass
+- [ ] Security review for system commands
+- [ ] Follows AGENTS.md constraints
+- [ ] Commit message follows Conventional Commits
+
+## 16. Branch Naming Convention
+
+When creating branches for AI-assisted work:
+- Use `feature/` prefix for new functionality
+- Use `fix/` prefix for bug fixes
+- Use `docs/` prefix for documentation
+- Use `refactor/` prefix for code restructuring
+
+## 17. Commit Message Convention
+
+Format: `<type>(<optional scope>): <short description>`
+
+Examples:
+- `feat(backend): add SSE stream endpoint for repair tasks`
+- `fix(frontend): handle null response in cleaner settings`
+- `docs(ai): complete AI workflow documentation`
+
+Always include Co-Authored-By line when AI assistance was involved.
+
+## 18. Related Documents
+
+- `AGENTS.md` - Agent guidelines for the repository
+- `CONTRIBUTING.md` - Contribution workflow
+- `docs/governance/RELEASE_STRATEGY.md` - Release process
+- `docs/operations/DEPLOYMENT.md` - Deployment procedures
+- `docs/security/SECURITY.md` - Security model
+- `docs/engineering/ERROR_HANDLING.md` - Error handling patterns

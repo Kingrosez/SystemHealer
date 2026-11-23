@@ -1,252 +1,131 @@
-# Deployment Guide
+# Deployment
 
 ## 1. Purpose
-This document describes how to build, package, and deploy SystemHealer.
+This document describes how SystemHealer is built, packaged, and delivered to
+Windows users. It covers development builds, production packaging, elevation,
+installer options, and release distribution.
 
-## 2. Build Process
+## 2. Deployment Model
 
-### 2.1 Prerequisites
-- Java 17 JDK
-- Node.js 18+
-- Maven 3.9+
-- Windows 10 or later
+SystemHealer is a **local desktop application** consisting of:
 
-### 2.2 Build Commands
+- A React frontend (static files)
+- A Spring Boot backend (JAR)
+- A Windows launcher that starts the backend and opens the UI
 
-#### Development Build
+In v1, the frontend is served by the Spring Boot backend as static resources, so
+the user runs a single process. A desktop wrapper (Electron/Tauri) is deferred to
+v1.1 (see ADR-010).
+
+## 3. Build Pipeline
+
+### 3.1 Frontend Build
 ```bash
-# Clone and setup
-git clone https://github.com/Kingrosez/SystemHealer.git
-cd SystemHealer
-
-# Backend
-cd backend
-./mvnw clean install
-
-# Frontend
-cd ../frontend
-npm install
-npm run build
-```
-
-#### Production Build
-```bash
-# Full build with all modules
-cd ..
-./mvnw clean verify -Pproduction
-```
-
-### 2.3 Build Outputs
-
-| Location | Contents |
-|----------|----------|
-| `backend/target/*.jar` | Spring Boot executable JAR |
-| `frontend/dist/` | Static assets |
-| `frontend/dist/index.html` | Entry point |
-
-## 3. Packaging
-
-### 3.1 JAR Packaging
-The backend builds a fat JAR with embedded dependencies:
-
-```bash
-java -jar target/systemhealer-*.jar
-```
-
-### 3.2 Frontend Build
-```bash
-npm run build
-# Output: dist/ directory
-```
-
-### 3.3 Combined Package Structure
-```
-systemhealer-1.0.0/
-├── backend/
-│   └── systemhealer.jar
-├── frontend/
-│   ├── index.html
-│   ├── assets/
-│   └── ...
-├── config/
-│   └── application.yml
-└── systemhealer.exe
-```
-
-## 4. Installation
-
-### 4.1 Windows Installer (Future)
-- MSI package with Start Menu shortcuts
-- Desktop shortcut creation
-- Uninstall entry in Programs & Features
-
-### 4.2 Portable Mode
-1. Extract ZIP to `C:\Program Files\SystemHealer`
-2. Create desktop shortcut to `systemhealer.exe`
-3. Pin to taskbar if desired
-
-### 4.3 Startup Options
-```powershell
-# Standard installation
-start-process "C:\Program Files\SystemHealer\systemhealer.exe"
-
-# Development mode with debug logging
-.\mvnw spring-boot:run -Dspring-boot.run.jvmArguments="-Dlogging.level.com.kingrosez=DEBUG"
-```
-
-## 5. Database Initialization
-
-### 5.1 First Run
-- Flyway creates database schema
-- SQLite database created at `%APPDATA%\SystemHealer\systemhealer.db`
-- Initial settings inserted
-
-### 5.2 Database Location
-| Platform | Path |
-|----------|------|
-| Windows | `%APPDATA%\SystemHealer\systemhealer.db` |
-| Development | `target/h2db/systemhealer.mv.db` |
-
-## 6. Configuration
-
-### 6.1 Application.yml
-```yaml
-server:
-  port: 8080
-
-spring:
-  datasource:
-    url: jdbc:sqlite:/path/to/db
-  jpa:
-    hibernate:
-      ddl-auto: validate
-
-logging:
-  level:
-    com.kingrosez: INFO
-```
-
-### 6.2 Environment Variables
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `SYSTEMHEALER_PORT` | 8080 | HTTP port |
-| `SYSTEMHEALER_DB_PATH` | %APPDATA% | Database location |
-| `SYSTEMHEALER_LOG_LEVEL` | INFO | Logging level |
-
-## 7. Running the Application
-
-### 7.1 From JAR
-```bash
-java -jar systemhealer-*.jar
-```
-
-### 7.2 From IDE
-```bash
-# IntelliJ
-./mvnw spring-boot:run
-
-# VS Code (with extensions)
-# Run > Start Debugging (F5)
-```
-
-### 7.3 Development Mode
-```bash
-# Frontend hot reload
 cd frontend
-npm run dev
-
-# Backend with dev profile
-cd ../backend
-./mvnw spring-boot:run -Dspring-boot.run.profiles=dev
+npm ci
+npm run build
+# Output: frontend/dist/
 ```
 
-## 8. Docker Deployment (Future)
-
-### 8.1 Docker Build
-```dockerfile
-FROM eclipse-temurin:17-jre
-COPY backend/target/*.jar /app.jar
-ENTRYPOINT ["java", "-jar", "/app.jar"]
-```
-
-### 8.2 Docker Compose
-```yaml
-version: '3.8'
-services:
-  systemhealer:
-    build: .
-    ports:
-      - "8080:8080"
-    volumes:
-      - ./data:/data
-```
-
-## 9. Release Process
-
-### 9.1 Version Numbering
-- Format: `MAJOR.MINOR.PATCH`
-- Semantic Versioning: https://semver.org/
-
-### 9.2 Pre-release Checklist
-- [ ] All tests pass
-- [ ] Coverage above thresholds
-- [ ] Changelog updated
-- [ ] Docker image built (if applicable)
-- [ ] Release notes drafted
-- [ ] Security scan complete
-
-### 9.3 Tagging
+### 3.2 Backend Build
 ```bash
-git tag -a v1.0.0 -m "Release version 1.0.0"
-git push origin v1.0.0
+cd backend
+./mvnw clean package
+# Output: backend/target/systemhealer-<version>.jar
 ```
 
-## 10. Rollback Procedures
+### 3.3 Combined Build (Frontend into Backend)
+Copy `frontend/dist/*` into `backend/src/main/resources/static/` before packaging,
+or use the Maven frontend plugin. The resulting JAR serves both API and UI.
 
-### 10.1 Database Migration Rollback
 ```bash
-# Downgrade database
-./mvnw flyway:undo
+# Example combined build
+cd frontend && npm ci && npm run build
+rm -rf ../backend/src/main/resources/static/*
+cp -r dist/* ../backend/src/main/resources/static/
+cd ../backend && ./mvnw clean package
 ```
 
-### 10.2 Application Rollback
-1. Stop current version
-2. Replace JAR with previous version
-3. Restore database backup if needed
-4. Restart application
+## 4. Runtime Configuration
 
-## 11. Monitoring in Production (Future)
+| Setting | Default | Override |
+|---------|---------|----------|
+| Server port | 8080 | `SERVER_PORT` env / `application.yml` |
+| Bind address | 127.0.0.1 | fixed (do not expose) |
+| DB path | `%APPDATA%\SystemHealer\systemhealer.db` | `SYSTEMHEALER_DB_PATH` |
+| Log level | INFO | `LOGGING_LEVEL_ROOT` |
 
-### 11.1 Health Checks
+Production profile: `application-prod.yml` with SQLite and file logging.
+
+## 5. Administrator Elevation
+
+Most repair features require administrator privileges. Options:
+
+1. **Manifest elevation** (preferred): embed a manifest requesting
+   `requireAdministrator` in the launcher EXE.
+2. **Launcher script**: a small `.bat`/`.ps1` that relaunches elevated.
+3. **Runtime check**: backend returns `ADMIN_REQUIRED` if not elevated; UI prompts.
+
+The app must clearly indicate admin status in the top bar (see UI guidelines).
+
+## 6. Installer Options
+
+| Option | Pros | Cons | Recommendation |
+|--------|------|------|----------------|
+| Portable ZIP | Simple, no install | Manual updates | Good for early testing |
+| MSI (WiX) | Standard, uninstall entry | More setup | **Recommended for v1** |
+| EXE (Inno Setup) | Easy, scriptable | Non-MS standard | Good alternative |
+| MSIX | Modern, sandboxed | Signing requirements, FS limits | Future |
+
+Recommended v1 path: **MSI via WiX**, bundling a JRE (jlink) and the JAR, with a
+Start Menu shortcut and uninstall entry.
+
+## 7. Bundling a Java Runtime
+
+Users may not have Java installed. Bundle a trimmed JRE with `jlink`:
+
 ```bash
-curl http://localhost:8080/actuator/health
+jlink --add-modules java.base,java.sql,java.desktop,java.logging,java.management \
+      --output runtime --strip-debug --compress=2 --no-header-files --no-man-pages
 ```
 
-### 11.2 Metrics Endpoint
-```bash
-curl http://localhost:8080/actuator/metrics
-```
+The installer places `runtime/`, the JAR, and the launcher in
+`C:\Program Files\SystemHealer\`.
 
-## 12. Troubleshooting
+## 8. Release Process
 
-### 12.1 Port Already in Use
-```bash
-# Find process using port 8080
-netstat -ano | findstr :8080
-# Kill process
-taskkill /PID <pid> /F
-```
+1. Update `CHANGELOG.md` (move Unreleased → version).
+2. Bump version in `pom.xml` and `package.json`.
+3. Tag the release: `git tag v0.1.0 && git push origin v0.1.0`.
+4. CI builds the JAR + installer and attaches them to the GitHub Release.
+5. Write release notes from `CHANGELOG.md`.
+6. Publish the installer.
 
-### 12.2 Database Lock
-```bash
-# Check for lock file
-ls -la %APPDATA%\SystemHealer\*.lock
-# Remove if stale
-del %APPDATA%\SystemHealer\systemhealer.db.lock
-```
+## 9. Distribution
 
-### 12.3 Debug Logs
-```bash
-# Run with debug logging
-java -jar systemhealer.jar --logging.level.com.kingrosez=DEBUG
-```
+- Primary: GitHub Releases (installer + checksum).
+- Provide SHA-256 checksums for downloads.
+- Future: code signing certificate to avoid SmartScreen warnings.
+
+## 10. Rollback
+
+- Keep the previous installer version available.
+- The app's data (SQLite) is backward compatible; migrations are additive.
+- If a release is broken, publish a patch release rather than yanking.
+
+## 11. Environment Matrix
+
+| OS | Version | Support |
+|----|---------|---------|
+| Windows 11 | 22H2+ | Primary |
+| Windows 10 | 21H2 (19044+) | Supported |
+| Windows 10 | older | Best effort |
+
+## 12. Related Documents
+- `docs/operations/CONFIGURATION.md`
+- `docs/operations/OBSERVABILITY.md`
+- `docs/operations/BACKUP_AND_RECOVERY.md`
+- `docs/architecture/ARCHITECTURE_DECISIONS.md` (ADR-010)
+
+## 13. Status
+Draft — v0.1

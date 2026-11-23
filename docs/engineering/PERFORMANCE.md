@@ -1,234 +1,117 @@
-# Performance Guidelines
+# Performance
 
 ## 1. Purpose
-This document defines performance expectations and optimization guidelines for
-SystemHealer.
+This document defines the performance expectations, budgets, and strategies for
+SystemHealer. Because the app runs long system commands and scans large file trees,
+performance is about **perceived responsiveness** and **resource safety**, not raw
+throughput.
 
-## 2. Performance Targets
+## 2. Performance Goals
 
-| Metric | Target | Measurement |
-|--------|--------|-------------|
-| App startup | < 3 seconds | Time from launch to UI ready |
-| Dashboard load | < 1 second | Time to render history cards |
-| SFC scan | User-visible progress | Streaming output |
-| Backend API | < 100ms (cache hit) | Response time p95 |
-| Database query | < 10ms | Simple queries by ID |
-| Memory usage | < 500MB | During heavy operations |
+| Area | Goal |
+|------|------|
+| UI first paint | < 1.5 s on a mid-range Windows 10 machine |
+| Tab navigation | < 200 ms |
+| API response (simple GET) | < 300 ms |
+| Scan start feedback | < 1 s (user sees "scanning…" immediately) |
+| Live log latency (SSE) | < 500 ms per line |
+| Duplicate scan (10,000 files) | < 60 s |
+| Memory footprint (idle) | < 300 MB total (frontend + backend) |
+| Memory footprint (duplicate scan) | < 800 MB |
+| Cancel response time | < 2 s after user clicks Cancel |
 
-## 3. Backend Performance
+## 3. Frontend Performance
 
-### 3.1 Database Query Optimization
+### 3.1 Bundle Size
+- Initial JS bundle target: **< 300 KB gzipped**.
+- Route-level code splitting via `React.lazy` + `Suspense`.
+- No large UI libraries beyond Tailwind + shadcn/ui primitives.
+- Tree-shake imports; avoid importing entire libraries.
 
-#### N+1 Problem Prevention
-Use JOIN FETCH or @EntityGraph:
+### 3.2 Rendering
+- Long lists (installed programs, duplicate groups) must use virtualization
+  (TanStack Virtual or equivalent) once > 100 rows.
+- Avoid re-rendering entire lists on single-item changes; memoize row components.
+- Use `React.memo` only where profiling shows benefit — not by default.
 
-```java
-@EntityGraph(attributePaths = {"restorePoints"})
-Optional<RepairHistory> findById(Long id);
+### 3.3 Data Fetching
+- TanStack Query caches server state; default `staleTime` = 30 s for read-only
+  lists (installed programs, history).
+- No polling unless necessary; prefer SSE for live updates.
+- Paginate large result sets (history, duplicate files).
 
-// Not recommended - causes N+1
-List<RepairHistory> histories = repository.findAll();
-histories.forEach(h -> System.out.println(h.getRestorePoints().size()));
-```
+### 3.4 Long-Running Operations UI
+- Never block the UI thread during scans or repairs.
+- Show progress indicator + live log within 1 s of starting.
+- Allow cancellation at any time.
 
-#### Pagination for Large Lists
-```java
-@GetMapping("/history")
-public Page<HistoryEntry> getHistory(Pageable pageable) {
-    return historyRepository.findAll(pageable);
-}
-```
+## 4. Backend Performance
 
-#### Index Usage
-All foreign key columns are indexed. Frequently queried columns (`status`,
-`start_time`) also have indexes.
+### 4.1 Startup
+- Cold start target: **< 5 s** on a mid-range machine.
+- Lazy-initialize heavy components (winget detection, DB migrations) where possible.
+- Avoid eager loading of large datasets at startup.
 
-### 3.2 Caching Strategy
+### 4.2 Command Execution
+- Stream stdout/stderr line-by-line (do not buffer entire output in memory).
+- Cap in-memory log buffer per operation (e.g., last 5,000 lines); persist full
+  logs to DB asynchronously.
+- Enforce timeouts (see `ERROR_HANDLING.md`).
+- Support cancellation: track running processes by task ID; kill on cancel.
 
-#### In-Memory Caching
-Use `@Cacheable` for read-heavy operations:
+### 4.3 File System Scans
+- Use streaming directory walks (`Files.walkFileTree`), not recursive list-all.
+- Duplicate detection two-pass strategy:
+  1. Group by size (fast, in-memory map).
+  2. Hash only candidates (SHA-256), in parallel with bounded thread pool.
+- Bounded thread pool: default 4 worker threads for hashing (I/O bound).
+- Skip system-critical directories by default (`C:\Windows`, `$Recycle.Bin`).
 
-```java
-@Cacheable("config")
-public AppSettings getSettings() {
-    return settingsRepository.findFirst();
-}
-```
+### 4.4 Database
+- Batch inserts for log lines and cleanup items (e.g., 500 rows per batch).
+- Index foreign keys and frequently queried columns (see `docs/database/DATABASE_DESIGN.md`).
+- Prune old log lines per retention policy (see `docs/operations/BACKUP_AND_RECOVERY.md`).
 
-Cache invalidation:
-```java
-@CacheEvict("config")
-public AppSettings updateSettings(AppSettings settings) {
-    return settingsRepository.save(settings);
-}
-```
+### 4.5 SSE Streaming
+- Use a bounded queue per SSE connection to prevent memory blowup on slow clients.
+- Drop oldest log lines if the client falls behind (with a "[truncated]" marker).
+- Close SSE connections on operation completion or cancellation.
 
-### 3.3 Streaming for Large Responses
+## 5. Resource Safety
 
-Use SSE for log streaming:
+- **Memory**: never load an entire file tree into memory; stream and aggregate.
+- **CPU**: cap parallel hashing threads; yield to the OS during long scans.
+- **Disk**: preview sizes before deletion; never auto-delete without confirmation.
+- **Processes**: track all spawned processes; kill on cancel or app shutdown.
 
-```java
-@GetMapping(value = "/repair/{id}/logs", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-public Flux<ServerSentEvent<String>> streamLogs(@PathVariable Long id) {
-    return logService.streamLogs(id);
-}
-```
+## 6. Profiling & Measurement
 
-### 3.4 Connection Pooling
+- Frontend: React DevTools Profiler, Lighthouse (bundle size), Chrome Performance tab.
+- Backend: Spring Boot Actuator metrics, JFR (Java Flight Recorder) for CPU/memory.
+- Establish baselines before optimizing; do not optimize prematurely.
 
-HikariCP is the default (Spring Boot 3.x). Configure:
+## 7. Performance Anti-Patterns to Avoid
 
-```yaml
-spring:
-  datasource:
-    hikari:
-      maximum-pool-size: 10
-      minimum-idle: 2
-      connection-timeout: 30000
-```
+| Anti-pattern | Why it hurts |
+|--------------|--------------|
+| Loading all files into memory for duplicate scan | OOM on large drives |
+| Polling the backend every second | Wasted CPU, battery drain |
+| Rendering 10,000-row tables without virtualization | UI freeze |
+| Buffering full command output before streaming | Delayed feedback, memory spikes |
+| Synchronous file I/O on the UI thread | Frozen UI |
+| Unbounded thread pools for hashing | CPU starvation, disk thrash |
 
-### 3.5 Process Execution Optimization
+## 8. Regression Guardrails (Future)
 
-- Execute Windows commands in parallel when possible
-- Use timeouts to prevent hanging (`process.waitFor(30, TimeUnit.SECONDS)`)
-- Stream output instead of buffering
+- CI should fail if the frontend bundle exceeds 350 KB gzipped.
+- CI should fail if cold start exceeds 8 s.
+- Benchmark scripts for duplicate scan and SFC streaming (manual for now).
 
-## 4. Frontend Performance
+## 9. Related Documents
+- `docs/engineering/ERROR_HANDLING.md`
+- `docs/engineering/SCALABILITY.md`
+- `docs/architecture/ARCHITECTURE.md`
+- `docs/operations/OBSERVABILITY.md`
 
-### 4.1 Code Splitting
-
-React.lazy for route-based code splitting:
-
-```tsx
-const RepairPage = lazy(() => import('./pages/RepairPage'));
-
-const router = createBrowserRouter([
-  { path: '/repair', element: <Suspense fallback={<Progress />}><RepairPage /></Suspense> },
-]);
-```
-
-### 4.2 Memoization
-
-Use React.memo for expensive components:
-
-```tsx
-const HistoryCard = React.memo(({ repair }) => {
-  return (
-    <Card>
-      <h3>{repair.operationType}</h3>
-      <p>{formatDate(repair.startTime)}</p>
-    </Card>
-  );
-});
-```
-
-Use useMemo for computed values:
-
-```tsx
-const expensiveValue = useMemo(() => {
-  return computeExpensiveValue(data);
-}, [data]);
-```
-
-### 4.3 Virtualized Lists
-
-For large lists of history entries:
-
-```tsx
-import {FixedSizeList} from 'react-window';
-
-const HistoryList = () => (
-  <FixedSizeList height={600} itemCount={1000} itemSize={80}>
-    {({ index, style }) => (
-      <div style={style}><HistoryCard id={index} /></div>
-    )}
-  </FixedSizeList>
-);
-```
-
-### 4.4 Image Optimization
-- SVG icons from shadcn/ui (inline, no network request)
-- No raster images in v1
-
-### 4.5 Bundle Optimization
-
-Check bundle size:
-
-```bash
-npm run build
-npx vite-bundle-analyzer dist/stats.json
-```
-
-Bundle budget:
-- Initial load: < 500KB gzipped
-- Each route: < 200KB additional
-
-## 5. Windows System Performance
-
-### 5.1 Background Operations
-
-Long-running operations (DISM, SFC) run in background:
-- Don't block the UI
-- Provide real-time progress
-- Allow cancellation
-
-### 5.2 Resource Usage Limits
-
-Monitor and limit:
-- CPU: Target < 50% during normal operation
-- Memory: Release resources after operations
-- Disk I/O: Queue file operations
-
-### 5.3 Cancellation Support
-
-```java
-public void cancelRepair(Long id) {
-    Process process = processRegistry.get(id);
-    if (process != null) {
-        process.destroy();
-    }
-    historyRepository.updateStatus(id, Status.CANCELLED);
-}
-```
-
-## 6. Performance Testing
-
-### 6.1 Load Testing
-
-API endpoints tested with:
-- k6 or similar tool
-- Concurrent users: 10 (local usage)
-- Requests per second: 100
-
-### 6.2 Stress Testing
-
-- Large database (100k+ history entries)
-- Concurrent repairs (not possible, but API handles multiple requests)
-- Low memory conditions
-
-### 6.3 Performance Profiling
-
-Backend:
-```bash
-# Enable profiling
-./mvnw spring-boot:run -Dspring-boot.run.jvmArguments="-XX:+FlightRecorder"
-
-# Analyze with JDK Mission Control
-```
-
-Frontend:
-```bash
-# Chrome DevTools Performance tab
-# React DevTools Profiler
-```
-
-## 7. Optimization Checklist
-
-Before each release:
-
-- [ ] Check API response times (should be < 100ms for cached ops)
-- [ ] Profile heavy UI components
-- [ ] Verify database query plans for new queries
-- [ ] Measure app startup time
-- [ ] Check memory usage after long operations
-- [ ] Test on low-end hardware (if feasible)
+## 10. Status
+Draft — v0.1

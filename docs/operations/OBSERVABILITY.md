@@ -1,34 +1,20 @@
 # Observability Guide
 
 ## 1. Purpose
-This document describes how SystemHealer emits, collects, and analyzes operational data to ensure reliability and performance.
+This document defines how SystemHealer emits, collects, and analyzes operational data to ensure reliability and performance.
 
-## 2. Metrics
+## 2. Principles
 
-### 2.1 Application Metrics
-| Metric | Description | Labels |
-|--------|-------------|--------|
-| `http_requests_total` | Total HTTP requests | method, path, status |
-| `http_request_duration_seconds` | Request latency | method, path |
-| `repair_operations_total` | Count of repair operations | operation, status |
-| `repair_operation_duration_seconds` | Operation duration | operation |
+SystemHealer is a local-only desktop application with no telemetry or external data collection. Observability is designed for:
 
-### 2.2 System Metrics
-| Metric | Description | Source |
-|--------|-------------|--------|
-| `system_cpu_percent` | CPU utilization | Windows Management Instrumentation |
-| `system_memory_percent` | Memory usage percentage | Performance Counters |
-| `system_disk_percent` | Disk space used | Drive info API |
-
-### 2.3 Database Metrics
-| Metric | Description |
-|--------|-------------|
-| `db_connections_active` | Active database connections |
-| `db_query_duration_seconds` | Query execution time |
+- Local debugging and troubleshooting
+- User-facing diagnostics
+- Developer logs for support
 
 ## 3. Logging
 
 ### 3.1 Log Levels
+
 | Level | Usage |
 |-------|-------|
 | `ERROR` | Operation failure, unrecoverable state |
@@ -38,21 +24,17 @@ This document describes how SystemHealer emits, collects, and analyzes operation
 | `TRACE` | Fine-grained debugging |
 
 ### 3.2 Log Format
+
+Backend logs use SLF4J + Logback with structured output:
+
 ```
-{
-  "timestamp": "2024-01-15T10:00:00Z",
-  "level": "INFO",
-  "logger": "com.kingrosez.systemhealer.service.RepairService",
-  "message": "SFC operation started",
-  "thread": "http-nio-8080-exec-1",
-  "context": {
-    "operationId": "abc-123",
-    "userId": "user-456"
-  }
-}
+2026-11-23T10:15:30Z INFO  [traceId=a1b2c3d4] c.s.repair.RepairService - SFC started
 ```
 
+Each request is assigned a UUID trace ID for correlation across logs and API responses.
+
 ### 3.3 Log Files
+
 | Location | Purpose |
 |----------|---------|
 | `%APPDATA%\SystemHealer\logs\application.log` | Application logs |
@@ -60,6 +42,7 @@ This document describes how SystemHealer emits, collects, and analyzes operation
 | `%APPDATA%\SystemHealer\logs\repair\` | Operation-specific logs |
 
 ### 3.4 Structured Logging
+
 ```java
 logger.info("Operation completed",
     keyValue("operation", "SFC"),
@@ -68,136 +51,70 @@ logger.info("Operation completed",
 );
 ```
 
-## 4. Tracing
+## 4. Health Endpoints
 
-### 4.1 Distributed Tracing
-- OpenTelemetry instrumentation
-- Span attributes for operations
-- Trace context propagation
+Spring Boot Actuator exposes the following endpoints:
 
-### 4.2 Span Structure
+| Endpoint | Purpose | Auth |
+|----------|---------|------|
+| `/actuator/health` | Liveness + readiness | None |
+| `/actuator/info` | Build info | None |
+| `/actuator/metrics` | Micrometer metrics | None |
+
+## 5. Metrics
+
+| Metric | Description | Labels |
+|--------|-------------|--------|
+| `http_requests_total` | Total HTTP requests | method, path, status |
+| `http_request_duration_seconds` | Request latency | method, path |
+| `repair_operations_total` | Count of repair operations | operation, status |
+| `repair_operation_duration_seconds` | Operation duration | operation |
+
+System metrics (CPU, memory, disk) are exposed via Micrometer using Windows Management Instrumentation.
+
+## 6. Task Tracking
+
+Long-running operations stream progress via Server-Sent Events (SSE) to the frontend:
+
 ```
-Trace: repair-workflow
-├── Span: HTTP Request
-│   ├── Span: Validate Input
-│   └── Span: Execute Repair
-│       ├── Span: Create Restore Point
-│       └── Span: Run SFC
-└── Span: Update History
-```
-
-## 5. Health Checks
-
-### 5.1 Liveness Probe
-```bash
-GET /actuator/health/liveness
-```
-Returns 200 when application is running.
-
-### 5.2 Readiness Probe
-```bash
-GET /actuator/health/readiness
-```
-Returns 200 when application is ready to serve traffic.
-
-### 5.3 Custom Health Indicators
-
-| Indicator | Check |
-|-----------|-------|
-| `database` | Database connectivity |
-| `windows` | Administrative privileges |
-| `disk` | Write permissions |
-
-## 6. Alerting
-
-### 6.1 Alert Rules
-| Alert | Condition | Severity |
-|-------|-----------|----------|
-| `app_high_memory` | Memory > 80% for 5m | Warning |
-| `operation_failure_rate` | Failure rate > 5% | Critical |
-| `database_connection_errors` | > 10 errors in 1m | Critical |
-
-### 6.2 Notification Channels
-- Windows Toast notifications (desktop)
-- Email alerts (future)
-
-## 7. Dashboards
-
-### 7.1 Key Metrics Dashboard
-- Request rate and latency
-- Operation success/failure counts
-- System resource usage
-
-### 7.2 Operation Dashboard
-- Recent operations timeline
-- Average operation duration by type
-- Failure reasons breakdown
-
-## 8. Debugging
-
-### 8.1 Live Endpoints
-```bash
-# View current metrics
-GET /actuator/metrics
-
-# View loggers
-GET /actuator/loggers
-
-# Thread dump
-GET /actuator/dump
+event: progress
+data: {"taskId": "abc-123", "status": "RUNNING", "progress": 45, "message": "Scanning files..."}
 ```
 
-### 8.2 Profiling
-```bash
-# Generate heap dump
-jcmd <pid> GC.run_finalization
+## 7. User-Facing Diagnostics
 
-# CPU profiling (JMH)
-java -jar systemhealer.jar --debug
-```
+The Status Bar component displays:
 
-### 8.3 Query Database Directly
-```bash
-# SQLite CLI access
-sqlite3 "%APPDATA%\SystemHealer\systemhealer.db"
-.tables
-.select * from operation_history;
-```
+- Current operation and progress
+- System health indicator (green/yellow/red)
+- Quick access to logs
 
-## 9. Monitoring Stack (Future)
+## 8. Error Reporting
 
-### 9.1 Prometheus Integration
-```yaml
-# scrape config
-scrape_configs:
-  - job_name: 'systemhealer'
-    static_configs:
-      - targets: ['localhost:8080']
-```
+Errors are returned with:
 
-### 9.2 Grafana Dashboard
-- Pre-built dashboards for common metrics
-- Custom queries for operational insights
+- `userMessage`: Plain-language description
+- `traceId`: For developer logs
+- `retryable`: Whether to retry
 
-## 10. Incident Response
+## 9. Alerting
 
-### 10.1 Troubleshooting Flow
-1. Check application status: `/actuator/health`
-2. Review recent logs: `application.log`
-3. Check operation history in database
-4. Examine system resources (CPU, memory, disk)
+- No external alerting system
+- Critical errors written to `error.log` and shown in UI
+- User can export logs for support
 
-### 10.2 Common Issues
+## 10. Log Retention
 
-| Symptom | Likely Cause | Resolution |
-|---------|--------------|------------|
-| Slow operations | High CPU/memory | Check system resources |
-| Permission errors | Not running as admin | Restart as administrator |
-| Database locked | Concurrent access | Close other instances |
-| High failure rate | Corrupted system files | Run SFC first |
+- Application logs: 30 days
+- Error logs: 90 days
+- Operation logs: cleaned after 30 days
 
-### 10.3 Log Access for Support
-```powershell
-# Package logs for support
-Compress-Archive -Path "$env:APPDATA\SystemHealer\logs" -DestinationPath "systemhealer-logs.zip"
-```
+## 11. Related Documents
+
+- `docs/operations/CONFIGURATION.md`
+- `docs/testing/TESTING_STRATEGY.md`
+- `docs/api/API_CONTRACT.md`
+
+## 12. Status
+
+Draft — v0.1
