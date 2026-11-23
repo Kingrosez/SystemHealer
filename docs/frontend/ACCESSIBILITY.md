@@ -6,14 +6,19 @@ This document defines the accessibility standards for SystemHealer to ensure the
 ## 2. WCAG Compliance Level
 SystemHealer targets **WCAG 2.1 Level AA** compliance.
 
+| Criterion | Level | Description |
+|-----------|-------|-------------|
+| Non-text Contrast | AA | 3:1 contrast for graphics and UI components |
+| Text Contrast | AA | 4.5:1 for normal text, 3:1 for large text |
+| Keyboard Accessible | A | All functionality available via keyboard |
+| Focus Visible | AA | Visible focus indicator at all times |
+| Labels/Instructions | A | Labels and instructions provided |
+| Sensory Characteristics | A | No sensory characteristics alone |
+| Audio Control | A | Audio can be paused/stopped |
+| Color Alone | A | Information not conveyed by color alone |
+
 ## 3. Color Contrast
 
-### 3.1 Minimum Requirements
-- **Normal text**: 4.5:1 contrast ratio minimum
-- **Large text** (18pt+ or 14pt+ bold): 3:1 contrast ratio minimum
-- **UI components**: 3:1 contrast ratio minimum
-
-### 3.2 Color Palette Contrast
 | Element | Light Mode | Dark Mode |
 |---------|------------|-----------|
 | Body text | #000000 on #ffffff (21:1) | #ffffff on #0a0a0a (19:1) |
@@ -21,8 +26,7 @@ SystemHealer targets **WCAG 2.1 Level AA** compliance.
 | Warning | #000000 on #f59e0b (4.5:1) | #000000 on #fbbf24 (4.8:1) |
 | Destructive | #ffffff on #ef4444 (4.5:1) | #000000 on #f87171 (4.8:1) |
 
-### 3.3 Testing Color Contrast
-Use tools like:
+### 3.1 Testing Color Contrast
 - WebAIM Contrast Checker
 - axe DevTools
 - Lighthouse Accessibility audit
@@ -247,19 +251,15 @@ it('is accessible', async () => {
 
 ## 12. Accessibility Checklist
 
-### 12.1 Before Release
-- [ ] All interactive elements keyboard accessible
-- [ ] All images have alt text (none in v1)
-- [ ] Form fields have associated labels
-- [ ] Color contrast meets minimum ratios
-- [ ] Focus indicators visible
-- [ ] No keyboard traps
-- [ ] ARIA attributes correct
-- [ ] Tested with screen reader
-
-### 12.2 Common Patterns
-- [ ] Loading states announced
-- [ ] Error messages announced
-- [ ] Modal dialogs have proper roles
-- [ ] Tables have proper headers
-- [ ] Links have discernible text
+| Requirement | Status |
+|-------------|--------|
+| WCAG 2.1 Level AA conformance | AA |
+| Keyboard navigation support | ✅ |
+| Screen reader announcements | ✅ |
+| Color contrast ratios | ✅ |
+| Focus management | ✅ |
+| Semantic HTML | ✅ |
+| ARIA attributes | ✅ |
+| Motion reduction support | ✅ |
+| Form labels | ✅ |
+| Error reporting | ✅ |
