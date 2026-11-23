@@ -1,397 +1,149 @@
 # Testing Strategy
 
 ## 1. Purpose
-This document defines the testing strategy, approaches, and standards for SystemHealer.
+This document defines how SystemHealer is tested across frontend and backend:
+test levels, tooling, coverage targets, mocking strategy, and CI expectations.
+Because the app runs privileged Windows commands, tests must **never execute real
+destructive operations**.
 
-## 2. Testing Levels
+## 2. Testing Principles
 
-### 2.1 Unit Tests
-- Test individual functions/methods in isolation
-- Fast execution (< 100ms each)
-- Mock external dependencies
-- 90%+ code coverage target
+- **Test behavior, not implementation.**
+- **Never run real system commands in tests** — mock the command layer.
+- **Fast feedback**: unit tests run in seconds; integration tests in minutes.
+- **Confidence in safety**: every destructive path has a test.
+- **Failures are isolated**: one flaky test must not block the suite.
 
-### 2.2 Integration Tests
-- Test API endpoints with real database
-- Test service interactions
-- 80%+ coverage target for critical paths
+## 3. Test Levels
 
-### 2.3 End-to-End Tests (Future)
-- Test full user workflows
-- Run against deployed application
-- Selenium/Cypress integration planned
+| Level | Scope | Tooling | Speed | Runs in CI |
+|-------|-------|---------|-------|------------|
+| Unit (frontend) | Components, hooks | Vitest + Testing Library | Fast | Yes |
+| Unit (backend) | Services, utilities | JUnit 5 + Mockito | Fast | Yes |
+| Integration (backend) | Controllers + DB | Spring Boot Test + MockMvc | Medium | Yes |
+| Contract | API shapes vs `API_CONTRACT.md` | Fixtures + schema validation | Fast | Yes |
+| E2E (optional, local) | Full flow (UI + backend) | Playwright | Slow | Manual / nightly |
 
-## 3. Backend Testing (Java)
+## 4. Backend Testing
 
-### 3.1 Testing Stack
-- JUnit 5
-- Mockito for mocking
-- Spring Boot Test
-- Testcontainers for integration tests
+### 4.1 Unit Tests
+- Every service class has tests for happy path + at least one failure path.
+- Mock dependencies (repositories, `CommandRunner`).
+- Use AssertJ for assertions.
 
-### 3.2 Test Structure
-```
-src/
-├── test/
-│   ├── java/com/kingrosez/systemhealer/
-│   │   ├── service/
-│   │   │   ├── RepairServiceTest.java
-│   │   ├── controller/
-│   │   │   ├── RepairControllerTest.java
-│   │   └── SystemHealerApplicationTests.java
-```
-
-### 3.3 Example Unit Test
 ```java
-@ExtendWith(MockitoExtension.class)
-class RepairServiceTest {
-
-    @Mock
-    private RepairRepository repository;
-
-    @InjectMocks
-    private RepairService service;
-
-    @Test
-    void startSfc_createsHistoryEntry() {
-        // Arrange
-        when(repository.save(any())).thenAnswer(invocation -> {
-            RepairHistory h = invocation.getArgument(0);
-            h.setId(1L);
-            return h;
-        });
-
-        // Act
-        RepairHistory result = service.startSfc(true);
-
-        // Assert
-        assertThat(result.getId()).isEqualTo(1L);
-        assertThat(result.getOperationType()).isEqualTo("SFC");
-        assertThat(result.getStatus()).isEqualTo(Status.IN_PROGRESS);
-        verify(repository).save(any(RepairHistory.class));
-    }
+@Test
+void shouldThrowWhenRestorePointFails() {
+  when(commandRunner.run(any())).thenThrow(new CommandExecutionException("..."));
+  assertThatThrownBy(() -> repairService.start(request))
+      .isInstanceOf(CommandExecutionException.class);
 }
 ```
 
-### 3.4 Integration Test Example
-```java
-@SpringBootTest
-@AutoConfigureTestDatabase
-@TestPropertySource(properties = {
-    "spring.flyway.enabled=false"
-})
-class RepairControllerIT {
+### 4.2 Command Layer Tests
+The `exec/CommandRunner` is mocked everywhere except its own unit tests.
+Its own tests simulate:
+- Normal exit (code 0)
+- Non-zero exit
+- Timeout
+- Launch failure
+- Cancellation
 
-    @Autowired
-    private MockMvc mockMvc;
+**Never** call real `sfc`, `DISM`, `netsh`, or registry commands in tests.
 
-    @Test
-    void postSfc_returnsInProgress() throws Exception {
-        mockMvc.perform(post("/api/repair/sfc")
-                .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"createRestorePoint\":false}"))
-            .andExpect(status().isOk())
-            .andExpect(jsonPath("$.operationType").value("SFC"))
-            .andExpect(jsonPath("$.status").value("IN_PROGRESS"));
-    }
-}
-```
+### 4.3 Controller Tests
+- Use `@WebMvcTest` + `MockMvc`.
+- Verify HTTP status, response shape, and error envelope.
+- Validate request DTOs (Bean Validation).
 
-## 4. Frontend Testing (TypeScript)
+### 4.4 Persistence Tests
+- Use H2 in-memory for repository tests.
+- Flyway migrations must run cleanly in the test profile.
+- Test cascade deletes and constraints.
 
-### 4.1 Testing Stack
-- Vitest (test runner)
-- React Testing Library
-- Jest DOM
-- MSW (Mock Service Worker)
+### 4.5 Coverage Targets
+- Services: **80% line coverage** minimum.
+- Command layer: **90%** (safety-critical).
+- Controllers: every endpoint has at least one test.
+- Exclusions: DTOs, config classes.
 
-### 4.2 Test Structure
-```
-src/
-├── __tests__/
-│   ├── components/
-│   │   ├── HistoryCard.test.tsx
-│   ├── hooks/
-│   │   ├── useHistory.test.ts
-│   └── api/
-│       ├── client.test.ts
-```
+## 5. Frontend Testing
 
-### 4.3 Example React Test
+### 5.1 Component Tests
+- Vitest + React Testing Library.
+- Test rendered output and user interactions, not internal state.
+- One smoke test per feature page.
+
 ```tsx
-import { render, screen, waitFor } from '@testing-library/react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { server } from '../../mocks/server';
-import { rest } from 'msw';
-import { HistoryList } from './HistoryList';
-
-describe('HistoryList', () => {
-  const queryClient = new QueryClient();
-
-  beforeEach(() => {
-    queryClient.clear();
-  });
-
-  it('displays loading state', () => {
-    render(
-      <QueryClientProvider client={queryClient}>
-        <HistoryList />
-      </QueryClientProvider>
-    );
-
-    expect(screen.getByText('Loading...')).toBeInTheDocument();
-  });
-
-  it('renders history items', async () => {
-    server.use(
-      rest.get('/api/history', (req, res, ctx) => {
-        return res(ctx.json({
-          content: [
-            { id: 1, operationType: 'SFC', status: 'COMPLETED' }
-          ],
-          totalElements: 1
-        }));
-      })
-    );
-
-    render(
-      <QueryClientProvider client={queryClient}>
-        <HistoryList />
-      </QueryClientProvider>
-    );
-
-    await waitFor(() => {
-      expect(screen.getByText('SFC')).toBeInTheDocument();
-    });
-  });
+it('shows confirm dialog before deleting', async () => {
+  render(<CleanerPage />);
+  await userEvent.click(screen.getByRole('button', { name: /delete files/i }));
+  expect(screen.getByRole('dialog')).toBeInTheDocument();
 });
 ```
 
-### 4.4 Mock Service Worker setup
-```tsx
-// src/mocks/server.ts
-import { setupServer } from 'msw/node';
-import { handlers } from './handlers';
+### 5.2 Hook Tests
+- Use `renderHook` for custom hooks.
+- Mock the API client (`src/lib/api.ts`) with MSW.
 
-export const server = setupServer(...handlers);
+### 5.3 API Mocking
+- MSW (Mock Service Worker) intercepts requests in tests.
+- Fixtures mirror `API_CONTRACT.md` shapes.
+- SSE mocked via a fake `EventSource`.
 
-// src/mocks/handlers.ts
-import { rest } from 'msw';
+### 5.4 Error & Empty States
+- Every data view has tests for: loading, empty, error, success.
 
-export const handlers = [
-  rest.get('/api/history', (req, res, ctx) => {
-    return res(ctx.json({
-      content: [],
-      totalElements: 0
-    }));
-  }),
-];
-```
+### 5.5 Coverage Targets
+- Components: **70% line coverage** minimum.
+- Hooks: **80%**.
+- Critical flows (repair, cleaner, recovery): 100% of happy + error paths.
 
-## 5. Windows Command Testing
+## 6. Contract Testing
 
-### 5.1 Mocking External Commands
-Never execute real Windows commands in tests:
+- Fixtures in `frontend/src/test/fixtures/` match `API_CONTRACT.md`.
+- A schema validation test ensures fixtures conform to the contract.
+- Backend integration tests assert response shapes match the same schemas.
 
-```java
-@Test
-void sfcCommand_returnsSuccess() throws Exception {
-    // Arrange
-    Process process = mock(Process.class);
-    when(processBuilder.start()).thenReturn(process);
-    when(process.waitFor(anyLong(), any())).thenReturn(true);
-    when(process.exitValue()).thenReturn(0);
+## 7. End-to-End (Optional)
 
-    // Act
-    CommandResult result = executor.execute("sfc", "/scannow");
+- Playwright runs against a locally started backend + frontend.
+- Uses a **test profile** where `CommandRunner` is a fake bean.
+- No real system changes.
+- Run manually or nightly; not on every PR.
 
-    // Assert
-    assertThat(result.exitCode()).isEqualTo(0);
-}
-```
+## 8. Test Data
 
-### 5.2 Integration Test with Mock
-```java
-@Test
-void sfcIntegration_runsSuccessfully() {
-    // Use a test Windows environment or mock
-    try (MockedStatic<Runtime> mockedRuntime = mockStatic(Runtime.class)) {
-        // Setup mock process execution
-        mockedRuntime.when(Runtime::getRuntime).thenReturn(mockRuntime);
-        // ... test logic
-    }
-}
-```
+- No production data in tests.
+- Use generated fixtures and in-memory DB.
+- Temp directories for file-system tests (cleaned up after).
 
-## 6. Test Configuration
+## 9. CI Expectations (Future GitHub Actions)
 
-### 6.1 Maven Test Profile
-```xml
-<profiles>
-  <profile>
-    <id>test</id>
-    <build>
-      <plugins>
-        <plugin>
-          <groupId>org.jacoco</groupId>
-          <artifactId>jacoco-maven-plugin</artifactId>
-          <configuration>
-            <exclude>
-              **/*Application.*
-              **/*Config.*
-            </exclude>
-          </configuration>
-        </plugin>
-      </plugins>
-    </build>
-  </profile>
-</profiles>
-```
+| Stage | Command |
+|-------|---------|
+| Frontend lint | `npm run lint` |
+| Frontend test | `npm test -- --run` |
+| Backend test | `./mvnw test` |
+| Build | `npm run build` + `./mvnw package` |
 
-### 6.2 Jest Configuration
-```javascript
-// vitest.config.ts
-export default defineConfig({
-  test: {
-    environment: 'jsdom',
-    globals: true,
-    setupFiles: ['./src/setupTests.ts'],
-    coverage: {
-      reporter: ['text', 'json', 'html'],
-      exclude: ['src/**/*.d.ts', 'src/**/*.test.*']
-    }
-  }
-});
-```
+CI must pass before merge. Flaky tests are quarantined and fixed promptly.
 
-## 7. Test Data Management
+## 10. Manual Testing Checklist (Pre-Release)
 
-### 7.1 Test Fixtures
-```java
-// TestDataFactory.java
-public class TestDataFactory {
-    public static RepairHistory createSfcHistory() {
-        RepairHistory history = new RepairHistory();
-        history.setOperationType("SFC");
-        history.setStatus(Status.COMPLETED);
-        history.setStartTime(LocalDateTime.now().minusHours(1));
-        return history;
-    }
-}
-```
+- [ ] Repair flow with a fake action (no real SFC)
+- [ ] Cleaner preview → confirm → delete in a temp folder
+- [ ] Duplicate scan on a temp folder
+- [ ] Restore point creation (non-destructive check)
+- [ ] Cancel a running task
+- [ ] Error state (stop backend, click Retry)
+- [ ] Keyboard-only navigation of main flows
 
-### 7.2 Frontend Fixtures
-```ts
-// src/__tests__/fixtures/history.ts
-export const mockHistoryResponse = {
-  content: [
-    { id: 1, operationType: 'SFC', status: 'COMPLETED', startTime: '2024-01-15T10:00:00Z' }
-  ],
-  totalElements: 1,
-  totalPages: 1,
-  number: 0,
-  size: 50
-};
-```
+## 11. Related Documents
+- `docs/engineering/ERROR_HANDLING.md`
+- `docs/engineering/PERFORMANCE.md`
+- `docs/api/API_CONTRACT.md`
+- `CONTRIBUTING.md`
 
-## 8. CI/CD Integration
-
-### 8.1 GitHub Actions
-```yaml
-name: Tests
-on: [push, pull_request]
-
-jobs:
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
-        with:
-          java-version: '17'
-          distribution: 'temurin'
-      - name: Run tests
-        run: ./mvnw verify
-      - name: Upload coverage
-        uses: codecov/codecov-action@v3
-```
-
-### 8.2 Coverage Thresholds
-- Backend: 80% line coverage
-- Frontend: 70% line coverage
-- Warnings fail the build
-
-## 9. Performance Testing
-
-### 9.1 Load Testing (Future)
-- k6 or Gatling for API load testing
-- Target: 100 RPS sustained
-- Response time: p95 < 100ms
-
-### 9.2 Memory Testing
-```java
-@Test
-void memoryUsage_staysBelowThreshold() {
-    long initialMemory = getUsedMemory();
-
-    // Run 100 operations
-    for (int i = 0; i < 100; i++) {
-        service.runSfc();
-    }
-
-    long finalMemory = getUsedMemory();
-    assertThat(finalMemory - initialMemory).isLessThan(100_000_000); // 100MB
-}
-```
-
-## 10. Security Testing
-
-### 10.1 Static Analysis
-- SpotBugs for Java
-- ESLint security rules for TypeScript
-- OWASP Dependency-Check
-
-### 10.2 Dynamic Analysis (Future)
-- OWASP ZAP for web interface
-- API penetration testing
-
-## 11. Test Execution Commands
-
-### 11.1 Run All Tests
-```bash
-# Backend
-./mvnw test
-
-# Frontend
-npm run test
-```
-
-### 11.2 Run Specific Tests
-```bash
-# Backend specific
-./mvnw test -Dtest=RepairServiceTest
-
-# Frontend specific
-npm run test -- HistoryList.test.tsx
-```
-
-### 11.3 Generate Coverage Report
-```bash
-# Backend
-./mvnw verify
-
-# Frontend
-npm run test -- --coverage
-```
-
-## 12. Testing Checklist
-
-Before each release:
-
-- [ ] All unit tests pass
-- [ ] All integration tests pass
-- [ ] Coverage above thresholds
-- [ ] No security warnings
-- [ ] Windows command mocks working
-- [ ] API contract tests updated
-- [ ] Performance benchmarks recorded
+## 12. Status
+Draft — v0.1
