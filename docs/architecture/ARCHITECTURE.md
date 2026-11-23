@@ -116,11 +116,12 @@ Long-running operations stream output via:
 | FileItem | path, size, hash, lastModified | File metadata |
 | RestorePoint | id, name, creationTime, description | System restore point |
 
-### 6.2 History Persistence
+### 6.2 Data Persistence
 
-- **Location**: `C:\ProgramData\SystemHealer/history/`
-- **Format**: JSON files (append-only log)
-- **Retention**: Configurable (default: 30 days)
+- **Location**: `%APPDATA%\SystemHealer\systemhealer.db` (SQLite file)
+- **Format**: SQLite database with 11 tables
+- **Schema**: repair_history, duplicate_groups, cleanup_items, cleanup_executions, updater_scans, tasks, settings, system_info, repair_options, duplicate_files
+- **Retention**: Configurable via settings.log_retention_days (default: 90 days for repairs, 30 days for duplicates)
 
 ## 7. Security Considerations
 
