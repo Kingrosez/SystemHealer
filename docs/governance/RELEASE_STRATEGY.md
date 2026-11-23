@@ -1,298 +1,100 @@
 # Release Strategy
 
 ## 1. Purpose
-This document defines the release strategy, process, and procedures for SystemHealer.
+This document defines how SystemHealer versions, releases, and communicates
+updates. It covers semantic versioning, release cadence, branching for releases,
+hotfixes, and deprecation policy.
 
-## 2. Release Types
+## 2. Versioning
 
-### 2.1 Major Release
-- **Version format**: `X.0.0`
-- **Scope**: Breaking changes, major new features
-- **Review**: Architecture review required
-- **Testing**: Full regression suite
-- **Downtime**: May require database migration
+SystemHealer follows **Semantic Versioning 2.0.0** (`MAJOR.MINOR.PATCH`):
 
-### 2.2 Minor Release
-- **Version format**: `X.Y.0`
-- **Scope**: New features, non-breaking enhancements
-- **Review**: Feature review required
-- **Testing**: Feature and regression tests
-- **Downtime**: None expected
+| Part | Increment when |
+|------|----------------|
+| MAJOR | Breaking changes to API, DB schema, or user-facing behavior |
+| MINOR | New features, backward compatible |
+| PATCH | Bug fixes, backward compatible |
 
-### 2.3 Patch Release
-- **Version format**: `X.Y.Z`
-- **Scope**: Bug fixes, security patches
-- **Review**: Code review required
-- **Testing**: Unit tests for fixes
-- **Downtime**: None expected
+Pre-release tags: `-alpha.N`, `-beta.N`, `-rc.N` (e.g., `0.2.0-beta.1`).
 
-## 3. Release Schedule
+## 3. Release Cadence
 
-### 3.1 Development Releases
-| Frequency | Type | Target |
-|-----------|------|--------|
-| Daily | Feature branch | Continuous integration |
-| Weekly | Main branch | Internal testing |
-| Monthly | Tagged release | Beta users |
+| Type | Frequency | Notes |
+|------|-----------|-------|
+| Patch | As needed | Bug/security fixes |
+| Minor | Every 4–6 weeks | New features |
+| Major | Rare, planned | Breaking changes + migration guide |
 
-### 3.2 Production Releases
-| Cadence | Criteria |
-|---------|----------|
-| On-demand | Critical fixes |
-| Bi-weekly | Feature completion |
-| Quarterly | Major/minor versions |
+v1.0.0 is the first stable release. Before that, `0.x.y` is pre-stable.
 
-## 4. Branching Strategy
+## 4. Branching for Releases
 
-### 4.1 Git Workflow
-```
-main (stable releases)
-├── develop (integration)
-│   ├── feature/user-authentication
-│   ├── feature/reporting
-│   └── hotfix/security-patch
-└── release/v1.0.0
-```
+We use **GitHub Flow** (see `CONTRIBUTING.md`). Releases are cut from `main`:
 
-### 4.2 Branch Naming
-| Type | Pattern | Example |
-|------|---------|---------|
-| Feature | `feature/<short-name>` | `feature/sfc-enhancement` |
-| Hotfix | `hotfix/<issue>` | `hotfix/critical-bug` |
-| Release | `release/v<major>.<minor>` | `release/v1.2.0` |
-| Maintenance | `maintenance/<type>` | `maintenance/dependency-update` |
+1. Update `CHANGELOG.md` (move `[Unreleased]` → new version).
+2. Bump version in `pom.xml` and `package.json`.
+3. Commit: `chore(release): v0.2.0`.
+4. Tag: `git tag -a v0.2.0 -m "Release v0.2.0"`.
+5. Push: `git push origin main --tags`.
+6. CI builds artifacts and creates a GitHub Release.
 
-### 4.3 Branch Protection
-- `main`: Requires PR review, status checks
-- `develop`: Requires PR review, status checks
+No long-lived release branches in v1. If maintenance of old majors is needed
+later, introduce `release/x.y` branches then.
 
-## 5. Release Process
+## 5. Release Checklist
 
-### 5.1 Pre-Release Checklist
+- [ ] All tests pass (frontend + backend)
+- [ ] `CHANGELOG.md` updated
+- [ ] Version bumped in `pom.xml` and `package.json`
+- [ ] Docs updated for behavior changes
+- [ ] Installer built and smoke-tested on Windows 10 + 11
+- [ ] SHA-256 checksums generated
+- [ ] GitHub Release created with notes
+- [ ] Tag pushed
 
-#### 5.1.1 Code Freeze
-- [ ] All features merged to `develop`
-- [ ] No open critical bugs
-- [ ] All tests passing
+## 6. Hotfix Process
 
-#### 5.1.2 Version Bump
-```bash
-# Update version in pom.xml
-mvn versions:set -DnewVersion=1.2.0
-# Commit version bump
-git commit -am "chore: bump version to 1.2.0"
-```
+For urgent fixes to a released version:
 
-#### 5.1.3 Changelog Update
-Review and update `CHANGELOG.md` with all changes since last release.
+1. Branch from `main`: `git checkout -b fix/<issue>`.
+2. Fix + test.
+3. Merge via PR.
+4. Bump PATCH version, update changelog, tag, release.
 
-#### 5.1.4 Documentation Sync
-- [ ] API documentation updated
-- [ ] User documentation updated
-- [ ] Release notes drafted
+If `main` has unreleased changes that can't ship, cherry-pick the fix onto a
+temporary `release/x.y` branch (introduced only when needed).
 
-### 5.2 Release Build
+## 7. Pre-Releases
 
-```bash
-# Create release branch
-git checkout -b release/v1.2.0 develop
+- `alpha`: internal, unstable.
+- `beta`: feature-complete, testing.
+- `rc`: release candidate, only critical fixes.
 
-# Run full build and test suite
-./mvnw clean verify -Pproduction
+Pre-releases are marked on GitHub and not recommended for general users.
 
-# Run integration tests
-./mvnw verify -Pintegration
+## 8. Deprecation Policy
 
-# Run security scan
-./mvnw dependency-check:check
-```
+- Deprecated features are announced in `CHANGELOG.md` under `Deprecated`.
+- They remain for at least one MINOR release before removal in the next MAJOR.
+- Removal requires a migration note in the release notes.
 
-### 5.3 Release Candidate
-```bash
-# Tag release candidate
-git tag -a v1.2.0-rc.1 -m "Release candidate 1"
-git push origin v1.2.0-rc.1
+## 9. Communication
 
-# Deploy to beta channel
-# Notify beta testers
-```
+- **GitHub Releases**: primary channel (notes from `CHANGELOG.md`).
+- **README**: links to latest release.
+- **In-app**: "What's new" panel after update (future).
 
-### 5.4 Final Release
-```bash
-# Create Git tag
-git tag -a v1.2.0 -m "Release version 1.2.0"
-git push origin v1.2.0
+## 10. Rollback of a Release
 
-# Publish to distribution
-# Update GitHub release
-```
+- If a release is broken, publish a PATCH fix promptly.
+- Do not delete tags or releases; mark them as "yanked" in notes if necessary.
+- Keep previous installers available for manual rollback.
 
-### 5.5 Post-Release
-- [ ] Merge release branch to `main`
-- [ ] Merge release branch to `develop`
-- [ ] Deploy to production
-- [ ] Close associated issues
-- [ ] Update documentation
+## 11. Related Documents
+- `CHANGELOG.md`
+- `CONTRIBUTING.md`
+- `docs/operations/DEPLOYMENT.md`
+- `docs/governance/RISK_REGISTER.md`
 
-## 6. Versioning
-
-### 6.1 Semantic Versioning
-Format: `MAJOR.MINOR.PATCH`
-
-| Component | Increment When |
-|-----------|-----------------|
-| MAJOR | Incompatible API changes |
-| MINOR | Backward-compatible feature additions |
-| PATCH | Backward-compatible bug fixes |
-
-### 6.2 Pre-release Identifiers
-| Suffix | Meaning |
-|--------|---------|
-| `-alpha.1` | Early testing, unstable |
-| `-beta.1` | Feature complete, testing |
-| `-rc.1` | Release candidate, feature freeze |
-
-### 6.3 Version Display
-- UI: Display major.minor in About dialog
-- API: Header `X-Version: 1.2.0`
-- Changelog: Grouped by version
-
-## 7. Quality Gates
-
-### 7.1 Code Coverage
-| Code Type | Minimum Coverage |
-|-----------|------------------|
-| Backend | 80% line coverage |
-| Frontend | 70% line coverage |
-| New features | 70% branch coverage |
-
-### 7.2 Test Results
-- [ ] All unit tests pass
-- [ ] All integration tests pass
-- [ ] No critical security vulnerabilities
-- [ ] Performance benchmarks meet thresholds
-
-### 7.3 Performance Thresholds
-| Metric | Threshold | Test |
-|--------|-----------|------|
-| App startup | < 3 seconds | Manual |
-| API response | < 100ms avg | Load test |
-| Memory usage | < 500MB | Stress test |
-
-## 8. Release Approval
-
-### 8.1 Approval Matrix
-| Release Type | Reviewer | Approver |
-|--------------|----------|----------|
-| Patch | Tech Lead | Maintainer |
-| Minor | Tech Lead, QA Lead | Maintainer |
-| Major | Architecture Review | Maintainer |
-
-### 8.2 Approval Process
-1. Create release PR
-2. Submit for review
-3. Address feedback
-4. Obtain approvals
-5. Merge to release branch
-6. Build and test
-7. Tag release
-
-## 9. Distribution
-
-### 9.1 Release Packages
-| Package | Contents | Format |
-|---------|----------|--------|
-| Portable | JAR + Frontend | ZIP |
-| Installer | MSI with shortcuts | MSI |
-| Portable ZIP | Self-contained | ZIP |
-
-### 9.2 Distribution Channels
-- GitHub Releases (primary)
-- Direct download (future)
-- Microsoft Store (future)
-
-### 9.3 Release Metadata
-```json
-{
-  "version": "1.2.0",
-  "buildDate": "2024-01-15T10:00:00Z",
-  "changelogUrl": "https://github.com/Kingrosez/SystemHealer/blob/main/CHANGELOG.md",
-  "checksum": "sha256:abcd1234..."
-}
-```
-
-## 10. Rollback Procedures
-
-### 10.1 When to Rollback
-- Data corruption detected
-- Critical functionality broken
-- Security vulnerability discovered
-
-### 10.2 Rollback Steps
-1. Stop current version
-2. Notify users
-3. Deploy previous version
-4. Restore database backup (if needed)
-5. Validate functionality
-6. Resume service
-
-### 10.3 Rollback Commands
-```bash
-# Stop service
-Taskkill /IM java.exe /F
-
-# Restore previous version
-xcopy /E /Y "D:\Backups\SystemHealer-v1.1.0" "C:\Program Files\SystemHealer"
-
-# Start service
-Start-Process "C:\Program Files\SystemHealer\systemhealer.exe"
-```
-
-## 11. Release Notes Template
-
-### 11.1 Format
-```markdown
-## v1.2.0 (2024-01-15)
-
-### Features
-- SFC scan performance improved by 30%
-- Native dark mode support added
-
-### Bug Fixes
-- Fixed issue where history would not load on first run
-- Resolved permission error on Windows 11
-
-### Breaking Changes
-- Minimum Windows version increased to 10.0.19041
-
-### Upgrade Notes
-- Backup your database before upgrading
-- First run after upgrade may take longer (database migration)
-```
-
-## 12. Release Metrics
-
-### 12.1 Track These Metrics
-| Metric | Target |
-|--------|--------|
-| Release frequency | Bi-weekly |
-| MTTR (Mean Time to Recovery) | < 4 hours |
-| Change fail rate | < 5% |
-| Lead time for changes | < 1 week |
-
-### 12.2 Retrospective Questions
-1. What went well?
-2. What could be improved?
-3. What did we learn?
-4. Action items for next release
-
-## 13. Communication
-
-### 13.1 Release Announcements
-- GitHub release
-- User notification in-app (future)
-- Social media (future)
-
-### 13.2 Support Contacts
-- GitHub Issues: https://github.com/Kingrosez/SystemHealer/issues
-- Documentation: https://github.com/Kingrosez/SystemHealer#readme
+## 12. Status
+Draft — v0.1
