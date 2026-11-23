@@ -1,293 +1,117 @@
 # AI Code Review
 
 ## 1. Purpose
-This document defines the AI-assisted code review process for SystemHealer, including review criteria, automated checks, and feedback handling.
+This document defines how to review code and documentation produced by AI agents
+on SystemHealer. AI output is fast but can be subtly wrong, over-broad, or
+unsafe. The review process treats agent output like any external contribution:
+verify, don't assume.
 
-## 2. Code Review Criteria
+## 2. Review Principles
 
-### 2.1 Correctness
-- [ ] Logic is correct for all branches
-- [ ] Edge cases are handled
-- [ ] Error conditions are properly caught
-- [ ] No off-by-one errors
+- **Trust, but verify**: check the diff, not just the summary.
+- **Scope discipline**: only intended files should change.
+- **Safety first**: no destructive commands, no secrets, no main pushes.
+- **Consistency**: follow `CODING_STANDARDS.md` and the doc conventions.
+- **Reproducibility**: the agent's report must match what actually changed.
 
-### 2.2 Quality
-- [ ] Code follows project conventions
-- [ ] Meaningful variable and method names
-- [ ] Methods are appropriately sized (< 50 lines)
-- [ ] No code duplication
-- [ ] Single responsibility principle
+## 3. Pre-Review Checks (Agent's Own Report)
 
-### 2.3 Maintainability
-- [ ] Clear comments for complex logic
-- [ ] Documentation updated
-- [ ] Type safety maintained
-- [ ] No TODOs or FIXMEs
+Before reading the diff, confirm the agent reported:
 
-### 2.4 Security
-- [ ] Input validation present
-- [ ] No hardcoded secrets
-- [ ] SQL injection prevented
-- [ ] Command injection prevented
-- [ ] Authentication checked for sensitive operations
+- [ ] Branch name
+- [ ] Commit hash(es)
+- [ ] Files changed (should match the task)
+- [ ] Push confirmation
+- [ ] Explicit statement that `main` was not touched
+- [ ] No PR created (unless requested)
 
-### 2.5 Performance
-- [ ] No N+1 query patterns
-- [ ] Efficient data structures
-- [ ] Appropriate caching
-- [ ] No memory leaks
+If any are missing, ask the agent to re-report before reviewing.
 
-## 3. Review Process
+## 4. Diff Review Checklist
 
-### 3.1 AI Pre-Review
-1. AI analyzes code changes against checklist
-2. AI suggests improvements
-3. AI flags potential issues
+### 4.1 Scope
+- [ ] Only the files specified in the prompt changed
+- [ ] No unrelated refactors or reformatting
+- [ ] No deleted files unless requested
+- [ ] No new dependencies without doc updates
 
-### 3.2 Human Review
-1. Validate AI findings
-2. Review suggested changes
-3. Apply or refine recommendations
-4. Verify test coverage
+### 4.2 Correctness
+- [ ] Content/logic matches the prompt
+- [ ] Tables, code blocks, and diagrams are intact
+- [ ] No truncated or placeholder content left behind
+- [ ] Links point to real files
 
-### 3.3 Review Stages
-| Stage | Focus |
-|-------|-------|
-| Pre-check | Build failures, compile errors |
-| Structural | Architecture, design patterns |
-| Detail | Logic, edge cases, tests |
-| Security | Vulnerabilities, access control |
-| Documentation | Comments, README updates |
+### 4.3 Safety
+- [ ] No secrets, tokens, or `.env` contents
+- [ ] No destructive system commands (e.g., `rm -rf`, registry deletes)
+- [ ] No `git push` to `main`
+- [ ] No force-push
+- [ ] No changes to `LICENSE`, `README.md`, `.gitignore` unless requested
 
-## 4. Automated Review Tools
+### 4.4 Conventions
+- [ ] Branch name follows `feature/`, `docs/`, `fix/`, `chore/`, etc.
+- [ ] Commit message follows Conventional Commits
+- [ ] Code follows `CODING_STANDARDS.md` (for code tasks)
+- [ ] Docs follow the structure used in other `.md` files
 
-### 4.1 Static Analysis
-| Tool | Language | Rules |
-|------|----------|-------|
-| SpotBugs | Java | Bug patterns, null dereferences |
-| ESLint | TypeScript | Code style, best practices |
-| SonarQube | Multiple | Code quality, security |
+### 4.5 Tests (Code Tasks)
+- [ ] Tests added/updated for new behavior
+- [ ] Tests pass locally or in CI
+- [ ] No real system commands in tests
 
-### 4.2 Security Scanning
-| Tool | Checks |
-|------|--------|
-| OWASP Dependency-Check | Vulnerable dependencies |
-| Snyk | Security vulnerabilities |
-| Trivy | Container image scanning |
+## 5. Common Agent Failure Modes
 
-### 4.3 Code Quality
-| Tool | Metrics |
-|------|---------|
-| Checkstyle | Code style |
-| PMD | Code smells |
-| JaCoCo | Test coverage |
+| Failure | How to spot | Fix |
+|---------|-------------|-----|
+| Scope creep | Extra files in the diff | Ask agent to revert unrelated changes |
+| Truncated content | Missing sections/tables | Re-issue with full content |
+| Nested code-fence breakage | Fragmented blocks | Use indented blocks in prompts |
+| Silent workaround | Agent reports success but diff differs | Compare commit hash + files |
+| Wrong branch | Commit on `main` or old branch | Stop; reset; re-issue |
+| Hallucinated file | Agent edits a non-existent path | Verify file exists first |
+| Placeholder code | `// TODO` left in committed code | Reject; require completion |
+| Secrets in diff | API keys, tokens | Reject; rotate; remove from history |
 
-## 5. AI Review Prompts
+## 6. Documentation Review (`.md` Tasks)
 
-### 5.1 Standard Review Prompt
-```markdown
-Review this code change:
+- [ ] Title matches filename
+- [ ] Numbered sections consistent with sibling docs
+- [ ] Tables render correctly (pipes aligned, headers present)
+- [ ] Code blocks have language tags
+- [ ] Related Documents section present and accurate
+- [ ] Status section present (`Draft — v0.1`)
+- [ ] No lorem ipsum or empty sections
 
-## Files Changed
-[diff content]
+## 7. Code Review (Code Tasks)
 
-## Review Checklist
-- Correctness: Any logic errors?
-- Security: Any vulnerabilities?
-- Performance: Any issues?
-- Style: Does it match project conventions?
-- Tests: Are tests adequate?
-- Documentation: Is it documented?
+- [ ] Follows package-by-feature (`PROJECT_STRUCTURE.md`)
+- [ ] No business logic in controllers/components
+- [ ] OS commands only via `exec/CommandRunner`
+- [ ] Errors use the standard envelope
+- [ ] Destructive endpoints use preview + confirm token
+- [ ] Logging uses SLF4J / no `console.log`
+- [ ] No `any` (frontend) or raw types (backend)
 
-## Project Conventions
-- File: [path to style guide]
-- Patterns: [relevant patterns]
-```
+## 8. Approval and Merge
 
-### 5.2 Security-Focused Review Prompt
-```markdown
-Conduct a security review of this code change:
+- Human (or Review Agent) approves only when all checks pass.
+- Merge via **Squash and merge**.
+- Delete the branch after merge.
+- If issues found: request changes; agent fixes on the same branch; re-review.
 
-[code diff]
+## 9. Post-Merge Verification
 
-Focus on:
-- Input validation
-- Command injection
-- SQL injection
-- Authentication/authorization
-- Data exposure
-- Privilege escalation
+- [ ] `main` builds
+- [ ] Tests pass on `main`
+- [ ] `CHANGELOG.md` updated under `[Unreleased]`
+- [ ] Docs links valid
 
-Flag any security concerns with severity (Critical/High/Medium/Low).
-```
+## 10. Related Documents
+- `AGENTS.md`
+- `docs/ai/AI_WORKFLOW.md`
+- `docs/ai/PROMPT_STANDARDS.md`
+- `docs/engineering/CODING_STANDARDS.md`
+- `CONTRIBUTING.md`
 
-## 6. Review Findings Categories
-
-### 6.1 Critical Issues
-Must be fixed before merge:
-- Security vulnerabilities
-- Data corruption risk
-- Critical bugs affecting users
-
-### 6.2 High Priority Issues
-Should be fixed in current PR:
-- Performance problems
-- Code quality issues
-- Missing tests
-
-### 6.3 Medium Priority Issues
-Can be addressed later:
-- Minor style violations
-- Suggestion for improvement
-- Documentation gaps
-
-### 6.4 Low Priority Issues
-Nice to have:
-- Minor optimizations
-- Alternative approaches
-
-## 7. Review Response Format
-
-### 7.1 Summary
-```
-Review Summary
-==============
-Critical: 0
-High: 2
-Medium: 1
-Low: 3
-
-Overall: Code is ready with minor fixes
-```
-
-### 7.2 Detailed Findings
-```markdown
-### Critical
-None
-
-### High
-1. **SECURITY**: Command injection risk in RepairService.java:45
-   - User input not sanitized before passing to ProcessBuilder
-   - Fix: Use validation whitelist or escape special characters
-
-2. **PERFORMANCE**: N+1 query in HistoryController.java:32
-   - Database load inside loop
-   - Fix: Use JOIN or batch fetch
-
-### Medium
-1. **TESTING**: Missing test for null input validation
-   - Add unit test for null handling
-
-### Low
-1. **STYLE**: Inconsistent naming in DTO
-   - Use camelCase for field names
-```
-
-## 8. Review Tools Interface
-
-### 8.1 CLI Review
-```bash
-# Generate diff for review
-git diff HEAD~1 HEAD | ai-review --format=markdown
-```
-
-### 8.2 IDE Integration
-- Right-click: "Review with AI"
-- Inline suggestions for improvements
-- Batch review for changed files
-
-## 9. Review Escalation
-
-### 9.1 When to Escalate
-- Security vulnerabilities found
-- Architectural concerns
-- Conflicts between team members
-- Unclear requirements
-
-### 9.2 Escalation Process
-1. Document issue with AI findings
-2. Notify tech lead or security team
-3. Schedule discussion
-4. Document decision
-
-## 10. Review Metrics
-
-### 10.1 Track These Metrics
-| Metric | Target |
-|--------|--------|
-| Reviews completed | 100% of PRs |
-| Critical issues caught pre-merge | 100% |
-| Review time | < 2 hours |
-| Review comments per PR | 2-5 |
-
-### 10.2 Review Quality Score
-```
-Score = (issues_found * 10) - (issues_missed * 20) - (false_positives * 5)
-```
-
-## 11. AI Review Limitations
-
-### 11.1 Can Not Detect
-- Business logic correctness
-- User experience issues
-- Architectural fitness
-- Future maintainability impact
-
-### 11.2 Requires Human Judgment For
-- Trade-off decisions
-- Risk assessment
-- Context-dependent requirements
-- Stakeholder impact
-
-## 12. Review Training
-
-### 12.1 Sample Reviews
-Review AI review outputs from:
-- High-quality PRs
-- PRs with issues
-- Security-sensitive changes
-
-### 12.2 Continuous Improvement
-- Refine prompts based on findings
-- Update checklist with new concerns
-- Share effective review patterns
-
-## 13. Post-Review Actions
-
-### 13.1 Apply Changes
-```bash
-# AI applies suggestions
-ai-apply-suggestions
-
-# Or manual review and apply
-git commit -am "review: address AI suggestions"
-```
-
-### 13.2 Document Decisions
-```markdown
-Review Decisions
-================
-- Kept existing pattern for backward compatibility
-- Deferred security fix to next sprint
-- Added documentation as suggested
-```
-
-## 14. Review Templates
-
-### 14.1 New File Review
-- Architecture fit
-- Dependency justification
-- Test coverage
-- Documentation
-
-### 14.2 Bug Fix Review
-- Root cause identified
-- Fix addresses cause, not symptom
-- Regression test added
-- No unintended side effects
-
-### 14.3 Feature Review
-- Requirements met
-- Edge cases handled
-- Error messages clear
-- Performance acceptable
+## 11. Status
+Draft — v0.1
