@@ -68,9 +68,11 @@ export function RepairPanel({ onStart, isRunning }: RepairPanelProps) {
 | Types/Interfaces | PascalCase | `RepairJob`, `HistoryEntry` |
 
 ### 4.4 State Management
-- Use React Context for global state.
-- Use TanStack Query for server state.
-- Use custom hooks for reusable logic.
+- **Server state**: TanStack Query (queries + mutations). All API data lives here.
+- **Global UI state** (theme, admin status, active task): React Context.
+- **Local component state**: `useState` / `useReducer`.
+- **Custom hooks**: extract reusable logic into hooks (`src/hooks/`).
+- No Redux unless an ADR justifies it.
 
 ### 4.5 Styling
 - Use Tailwind CSS utility classes.
