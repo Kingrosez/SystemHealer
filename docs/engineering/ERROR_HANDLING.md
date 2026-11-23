@@ -1,288 +1,166 @@
 # Error Handling
 
 ## 1. Purpose
-This document defines the error handling strategy for SystemHealer. All error
-conditions must be handled consistently across frontend and backend.
+This document defines how SystemHealer detects, represents, propagates, logs, and
+surfaces errors across the backend (Spring Boot) and frontend (React). Because the
+app executes privileged Windows commands, error handling must be predictable,
+safe, and never leave the system in an unknown state.
 
-## 2. Error Categories
+## 2. Principles
 
-| Category | Description | Example |
-|----------|-------------|---------|
-| Validation | User input doesn't meet requirements | Empty required field |
-| Authentication | User not authenticated | Missing token |
-| Authorization | User lacks permission | Delete without admin |
-| Not Found | Resource doesn't exist | Unknown repair ID |
-| Conflict | Resource state conflict | Duplicate operation |
-| Server | Backend error | Database unavailable |
-| Windows | OS-level error | Permission denied, system file in use |
+- **Fail loudly in logs, softly in UI**: log full detail server-side; show plain language to users.
+- **Never swallow errors**: every `catch` must log or rethrow.
+- **No partial destructive state**: if a destructive operation fails midway, the system must report exactly what succeeded and what didn't.
+- **Recoverable vs. fatal**: distinguish errors the user can fix (e.g., "run as administrator") from those requiring a restart or rollback.
+- **No stack traces to the frontend**: internal details stay server-side.
 
-## 3. Backend Error Handling
+## 3. Backend Error Model
 
 ### 3.1 Exception Hierarchy
 
 ```
-SystemHealerException (base)
-├── ValidationException → 400 Bad Request
-├── AuthenticationException → 401 Unauthorized
-├── AuthorizationException → 403 Forbidden
-├── ResourceNotFoundException → 404 Not Found
-├── ConflictException → 409 Conflict
-├── WindowsCommandException → 500 Internal Server Error
-└── SystemHealerRuntimeException → 500 Internal Server Error
+SystemHealerException (base, extends RuntimeException)
+├── ValidationException          → HTTP 400
+├── NotFoundException            → HTTP 404
+├── ConflictException            → HTTP 409
+├── PermissionDeniedException    → HTTP 403
+├── CommandExecutionException    → HTTP 500 (wraps process failures)
+├── DependencyUnavailableException → HTTP 503 (e.g., winget missing)
+└── InternalException            → HTTP 500 (fallback)
 ```
 
-### 3.2 Global Exception Handler
+Each exception carries:
+- `code` (machine-readable, e.g., `REPAIR_SFC_FAILED`)
+- `message` (developer-facing)
+- `userMessage` (plain-language, safe to show)
+- optional `details` map (safe context)
 
-`@ControllerAdvice` class handles all exceptions and converts to standardized
-JSON response.
+### 3.2 Standard Error Response
 
-```java
-@ControllerAdvice
-public class GlobalExceptionHandler {
-
-    @ExceptionHandler(ValidationException.class)
-    public ResponseEntity<ErrorResponse> handleValidation(ValidationException ex) {
-        return ResponseEntity.badRequest()
-            .body(new ErrorResponse("VALIDATION_ERROR", ex.getMessage()));
-    }
-
-    @ExceptionHandler(ResourceNotFoundException.class)
-    public ResponseEntity<ErrorResponse> handleNotFound(ResourceNotFoundException ex) {
-        return ResponseEntity.status(HttpStatus.NOT_FOUND)
-            .body(new ErrorResponse("NOT_FOUND", ex.getMessage()));
-    }
-}
-```
-
-### 3.3 Error Response Format
+All errors return a consistent JSON shape.
 
 ```json
 {
-  "timestamp": "2024-01-15T10:30:00Z",
-  "status": 400,
-  "error": "Bad Request",
-  "code": "VALIDATION_ERROR",
-  "message": "Title is required",
-  "path": "/api/repair"
+  "timestamp": "2026-11-23T10:15:30Z",
+  "status": 500,
+  "code": "REPAIR_SFC_FAILED",
+  "message": "SFC scan failed with exit code 1",
+  "userMessage": "System File Checker could not complete. Try running as administrator.",
+  "path": "/api/repair/start",
+  "traceId": "a1b2c3d4"
 }
 ```
 
-### 3.4 Windows Command Errors
+`traceId` links to backend logs for support.
 
-Windows commands can fail for various reasons. All command execution must:
+### 3.3 Global Exception Handler
 
-1. Capture stderr output
-2. Capture exit code
-3. Wrap in domain-specific exception
+Implement `@RestControllerAdvice` (`GlobalExceptionHandler`) that:
+- Maps each exception type to the correct HTTP status.
+- Builds the standard error response.
+- Logs at `ERROR` (unexpected) or `WARN` (expected/validation).
+- Never leaks stack traces or file paths.
 
 ```java
-public record CommandResult(int exitCode, String stdout, String stderr) {}
+@RestControllerAdvice
+public class GlobalExceptionHandler {
 
-public CommandResult execute(String... args) throws WindowsCommandException {
-    try {
-        Process process = new ProcessBuilder(args).start();
-        // ... read output ...
-        if (process.exitValue() != 0) {
-            throw new WindowsCommandException(
-                "Command failed with exit code " + process.exitValue(),
-                process.exitValue(),
-                stderr
-            );
-        }
-        return new CommandResult(process.exitValue(), stdout, stderr);
-    } catch (IOException e) {
-        throw new WindowsCommandException("Failed to execute command", e);
-    }
-}
-```
-
-## 4. Frontend Error Handling
-
-### 4.1 API Error Handling
-
-Use TanStack Query's error handling:
-
-```tsx
-const { data, error, isError } = useQuery({
-    queryKey: ['history'],
-    queryFn: fetchHistory,
-    errorThreshold: (error) => error.status >= 500 ? Infinity : 0,
-    retry: 3,
-    retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 30000),
-});
-
-if (isError) {
-    if (error.status === 404) {
-        return <NotFound />;
-    }
-    if (error.status === 403) {
-        return <AccessDenied />;
-    }
-    return <ErrorDisplay message={error.message} />;
-}
-```
-
-### 4.2 Toast Notifications
-
-Use toast notifications for user-facing errors:
-
-```tsx
-const showToast = useToast();
-
-mutate(newRepair, {
-  onError: (error: ErrorResponse) => {
-    showToast({
-      title: getErrorTitle(error.code),
-      description: error.message,
-      variant: "destructive",
-    });
+  @ExceptionHandler(CommandExecutionException.class)
+  public ResponseEntity<ErrorResponse> handleCommand(CommandExecutionException ex) {
+    log.error("Command failed: {} (exit={})", ex.getCode(), ex.getExitCode(), ex);
+    return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+        .body(ErrorResponse.from(ex));
   }
-});
-```
-
-### 4.3 Form Validation Errors
-
-```tsx
-const form = useForm<RepairForm>({
-  resolver: zodResolver(schema),
-  mode: "onSubmit"
-});
-
-if (form.formState.errors) {
-  // Errors displayed inline with form fields
 }
 ```
 
-## 5. Error Logging
+## 4. Command Execution Errors
 
-### 5.1 Backend Logging
+The `exec/CommandRunner` is the highest-risk area. Rules:
 
-```java
-@Slf4j
-@Service
-public class RepairService {
-    public void executeSfc() {
-        log.info("Starting SFC scan");
-        try {
-            CommandResult result = executor.execute("sfc", "/scannow");
-            log.info("SFC completed with exit code {}", result.exitCode());
-        } catch (Exception e) {
-            log.error("SFC failed", e);
-            throw new RepairFailedException("SFC scan failed", e);
-        }
-    }
-}
-```
+- Every command has a **timeout** (default 10 minutes for SFC/DISM, 2 minutes for quick commands).
+- On non-zero exit code → throw `CommandExecutionException` with:
+  - command name (not raw args if they contain sensitive paths)
+  - exit code
+  - last N lines of stderr
+- On timeout → kill the process, throw `CommandExecutionException` with `code = COMMAND_TIMEOUT`.
+- On process launch failure → `InternalException`.
+- **Partial success**: if a multi-step repair fails at step 3 of 5, report which steps succeeded and which failed. Do not report overall "success".
 
-### 5.2 Frontend Logging
+## 5. Frontend Error Handling
 
-Use Sentry or similar for client-side error tracking (future).
+### 5.1 API Errors
+- Every TanStack Query/mutation defines an `onError` handler.
+- API client (`src/lib/api.ts`) normalizes error responses into a typed `ApiError { code, message, userMessage, status }`.
+- UI shows `userMessage` (never `message` or stack traces).
 
-## 6. Error Recovery
+### 5.2 Error States per View
+Every data-driven view must handle four states:
+- **Loading**: spinner or skeleton.
+- **Empty**: friendly "nothing here" message.
+- **Error**: plain-language message + retry button.
+- **Success**: normal render.
 
-### 6.1 Automatic Retry
+### 5.3 Error Boundaries
+- Wrap route-level components in an `ErrorBoundary`.
+- On crash: show a fallback UI with "Reload" and "Go to Dashboard".
+- Log the error to console in dev; in production, optionally send to a local log endpoint (future).
 
-Retry strategies:
-- Network errors: exponential backoff (3 attempts)
-- Rate limiting: wait for retry-after header
-- Transient Windows errors: notify user, suggest retry
+### 5.4 User-Facing Messages
+- Plain language, no codes, no jargon.
+- Actionable: tell the user what to do next.
+- Examples:
+  - ❌ "CommandExecutionException: exit 1"
+  - ✅ "System File Checker could not complete. Try running as administrator."
+  - ❌ "ECONNREFUSED 127.0.0.1:8080"
+  - ✅ "Can't reach the SystemHealer service. Make sure it's running and try again."
 
-### 6.2 Manual Recovery
+## 6. Logging
 
-Some errors require user action:
-- Permission denied: "Run as administrator"
-- System file in use: "Close programs and retry"
-- Restore point failed: "Create restore point manually in Windows"
+| Level | When | Example |
+|-------|------|---------|
+| `ERROR` | Unexpected failures, command failures | SFC failed with exit 1 |
+| `WARN` | Recoverable issues, validation failures | Restore point skipped (24h limit) |
+| `INFO` | Major operations | Repair started, cleanup completed |
+| `DEBUG` | Detailed flow (dev only) | Command args, intermediate results |
 
-## 7. Error Messages to Users
+Rules:
+- Backend: SLF4J. No `System.out.println`.
+- Frontend: no `console.log` in committed code.
+- Logs include `traceId` for correlation.
+- Never log secrets, tokens, or full file contents.
 
-### 7.1 Principles
-- Clear and actionable
-- No stack traces
-- Link to documentation if helpful
-- Localized in future versions
+## 7. Safety-Critical Errors (Repair / Recovery)
 
-### 7.2 Message Guidelines
+| Scenario | Behavior |
+|----------|----------|
+| Restore point creation fails | Abort high-risk operation; tell user to enable System Protection |
+| SFC/DISM exits non-zero | Report failure + suggest reboot + retry; link to logs |
+| Registry delete fails midway | Stop; report which keys were deleted; offer restore from backup |
+| Duplicate deletion fails on some files | Report per-file results; never silently skip |
+| Winget missing | `DependencyUnavailableException`; disable updater UI with explanation |
+| BitLocker enabled + recovery action | Warn user; require explicit confirmation |
 
-| Error Type | User Message |
-|------------|--------------|
-| Validation | "Please fill in all required fields." |
-| Permission | "Please run SystemHealer as administrator." |
-| Network | "Network error. Please check your connection and try again." |
-| System command | "Unable to complete operation. See logs for details." |
-| Unknown | "An unexpected error occurred. Please try again or contact support." |
+## 8. Retry Policy
 
-## 8. Monitoring and Alerting
+- **Never auto-retry destructive operations.**
+- Safe read-only operations (scan, list, preview) may retry once on transient failure (network, timeout).
+- User-initiated retry is always available via the UI.
+- Log every retry attempt.
 
-### 8.1 Log Levels
-- `ERROR`: Unexpected failures, system errors
-- `WARN`: Recoverable issues, deprecated usage
-- `INFO`: Major operations (repair started/completed)
-- `DEBUG`: Detailed diagnostic information (dev only)
+## 9. Testing Error Paths
 
-### 8.2 Error Metrics
-Track error counts by type:
-- Total errors per hour
-- Error types distribution
-- Recovery success rate
+- Every service method must have at least one test for its failure path.
+- `CommandRunner` tests must simulate: non-zero exit, timeout, launch failure.
+- Controller tests must verify the standard error response shape.
+- Frontend tests must cover loading/error/empty states for each page.
 
-## 9. Testing Error Handling
+## 10. Related Documents
+- `docs/engineering/CODING_STANDARDS.md`
+- `docs/engineering/DEVELOPMENT_WORKFLOW.md`
+- `docs/api/API_CONTRACT.md`
+- `docs/operations/OBSERVABILITY.md`
+- `docs/testing/TESTING_STRATEGY.md`
 
-### 9.1 Backend Tests
-
-```java
-@Test
-void handleValidationException_returnsBadRequest() {
-    mockMvc.perform(post("/api/repair")
-            .contentType(MediaType.APPLICATION_JSON)
-            .content("{}"))
-        .andExpect(status().isBadRequest())
-        .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
-}
-
-@Test
-void handleWindowsException_returnsInternalServerError() {
-    given(repairService.executeSfc()).willThrow(
-        new WindowsCommandException("Access denied"));
-
-    mockMvc.perform(post("/api/repair/sfc"))
-        .andExpect(status().isInternalServerError())
-        .andExpect(jsonPath("$.code").value("WINDOWS_ERROR"));
-}
-```
-
-### 9.2 Frontend Tests
-
-```tsx
-it("shows error message when API returns 500", () => {
-  server.use(
-    rest.post("/api/repair/sfc", (req, res, ctx) => {
-      return res(ctx.status(500));
-    })
-  );
-
-  render(<RepairPage />);
-  fireEvent.click(screen.getByText("Run SFC"));
-
-  expect(screen.getByText(/unexpected error/i)).toBeInTheDocument();
-});
-```
-
-## 10. Debugging Guide
-
-### 10.1 Backend Debugging
-1. Check application logs: `tail -f logs/application.log`
-2. Enable debug logging: `logging.level.com.kingrosez=DEBUG`
-3. Use debugger with `./mvnw spring-boot:run -Dspring-boot.run.jvmArguments="-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=5005"`
-
-### 10.2 Frontend Debugging
-1. Open browser DevTools (F12)
-2. Check Network tab for failed requests
-3. Console logs: `console.error()` statements
-4. React DevTools for component state
-
-### 10.3 Windows Command Debugging
-1. Test command manually in PowerShell
-2. Check exit code: `$LASTEXITCODE`
-3. Verify permissions (run as admin if needed)
-4. Check Windows event logs: `Get-EventLog`
+## 11. Status
+Draft — v0.1
