@@ -1,240 +1,141 @@
 # UI/UX Guidelines
 
 ## 1. Purpose
-This document defines the user interface and user experience guidelines for SystemHealer.
+This document defines the user experience principles, navigation structure,
+interaction patterns, and tone of voice for SystemHealer. It ensures the app feels
+safe, clear, and trustworthy for non-technical and technical users alike.
 
-## 2. User Personas
+## 2. UX Principles
 
-### 2.1 Primary User
-- **Name**: Tech-Savvy User
-- **Goal**: Maintain and repair their Windows system
-- **Skills**: Basic to intermediate Windows knowledge
-- **Context**: Personal computer, occasional maintenance needed
+- **Safety first**: destructive actions are always previewed and confirmed.
+- **Plain language**: no jargon in the main UI. Translate technical terms.
+- **Show progress**: never leave the user guessing during long operations.
+- **Reversible by default**: every risky action has a rollback path.
+- **Consistent patterns**: same layout, same confirmation flow, same feedback everywhere.
+- **Calm, not alarming**: warnings are clear but not scary; errors are actionable.
 
-### 2.2 Secondary User
-- **Name**: IT Professional
-- **Goal**: Quick system diagnostics and repair
-- **Skills**: Advanced Windows knowledge
-- **Context**: Client troubleshooting, support requests
+## 3. Navigation Structure
 
-## 3. Design Principles
+Left sidebar with these sections (top to bottom):
 
-### 3.1 Safety First
-- All destructive operations require explicit confirmation
-- Restore points created before high-risk operations
-- Clear indication of admin privilege requirements
+| Section | Purpose |
+|---------|---------|
+| Dashboard | System overview, quick actions, health summary |
+| Repair | System file, network, Windows Update repair |
+| Uninstaller | Installed programs, deep uninstall |
+| Cleaner | Junk/cache cleaning, duplicate finder |
+| Updater | Outdated software scan and update |
+| Recovery | Restore points, rollback, history |
+| History | Past repair/cleanup/uninstall runs |
+| Settings | Preferences, retention, theme |
 
-### 3.2 Progressive Disclosure
-- Show only essential information initially
-- Advanced options hidden by default
-- Detailed logs accessible but not intrusive
+Rules:
+- Sidebar collapses to icons on narrow windows.
+- Active section is highlighted.
+- No nested menus deeper than two levels.
 
-### 3.3 Visual Hierarchy
-- Primary actions prominent (destructive, colored)
-- Secondary actions subdued (outline, gray)
-- Status clearly indicated with color and icon
+## 4. Layout Rules
 
-## 4. User Flows
+- **Top bar**: app name, admin status badge, global search (future), settings icon.
+- **Content area**: page title, short description, primary action, then content.
+- **Log panel**: docked at the bottom for long-running operations; collapsible.
+- **Max content width**: 1200px, centered on large screens.
+- **Spacing**: consistent 8px grid (4/8/16/24/32).
 
-### 4.1 Run SFC Scan
-```
-Dashboard → [Run SFC] → Preview Dialog → [Create Restore Point] → Progress → Results
-```
+## 5. Tone of Voice
 
-### 4.2 View History
-```
-Dashboard → [History Tab] → List (paginated) → [Click Item] → Detail View
-```
+| Do | Don't |
+|----|-------|
+| "System File Checker could not complete. Try running as administrator." | "CommandExecutionException: exit 1" |
+| "We'll create a restore point before repairing." | "Checkpoint-Computer will be invoked." |
+| "This will delete 42 files (1.2 GB)." | "Destructive operation pending." |
+| "Nothing to clean here — your PC looks good!" | "0 items found." |
 
-### 4.3 System Cleanup
-```
-Tools → [Cleanup] → Scan for Issues → Preview List → [Clean Files] → Confirm
-```
+Rules:
+- Use "you" and "we" sparingly.
+- Avoid passive voice.
+- Never blame the user.
+- Always say what happens next.
 
-## 5. Interaction Patterns
+## 6. Feedback Patterns
 
-### 5.1 Two-Step Pattern for Destructive Actions
-1. Preview step: Show what will be affected
-2. Confirmation step: Require explicit user action
+### 6.1 Loading States
+- Skeleton loaders for lists and cards.
+- Spinner for short operations (< 2 s).
+- Progress bar + live log for long operations.
 
-```tsx
-function DestructiveAction() {
-  const [preview, setPreview] = useState(null);
+### 6.2 Empty States
+- Friendly message + illustration (optional) + primary action.
+- Example: "No outdated software found. You're up to date!"
 
-  const handlePreview = async () => {
-    const data = await fetchPreview();
-    setPreview(data);
-  };
+### 6.3 Error States
+- Plain-language message (from `userMessage`).
+- "Retry" button.
+- Link to logs (collapsible) for technical users.
 
-  return (
-    <Button onClick={handlePreview}>Action</Button>
-  );
-}
-```
+### 6.4 Success States
+- Toast notification for quick actions.
+- Summary panel for long operations (e.g., "Repaired 3 items, 0 failed").
+- Option to view details or roll back.
 
-### 5.2 Status Indicators
-| Status | Color | Icon | Meaning |
-|--------|-------|------|---------|
-| `PENDING` | gray | Clock | Waiting for user |
-| `IN_PROGRESS` | blue | Loader | Running |
-| `COMPLETED` | green | Check | Success |
-| `FAILED` | red | X | Error |
-| `CANCELLED` | yellow | Alert | User stopped |
+## 7. Confirmation Patterns
 
-### 5.3 Error Recovery
-- Provide clear next steps
-- Link to documentation if helpful
-- Suggest alternative actions
+Destructive actions use a two-step flow:
 
-## 6. Information Architecture
+1. **Preview dialog**: shows what will be affected, sizes, and a summary.
+2. **Confirm button**: explicit, primary-colored, with the action verb.
 
-### 6.1 Navigation
-```
-[Dashboard] [History] [Tools] [Settings]
-```
+Rules:
+- Never auto-confirm.
+- For high-risk actions (registry, recovery), require typing a word (e.g., "DELETE").
+- Show a warning icon and a short risk explanation.
+- Provide a "Cancel" option that is equally prominent.
 
-### 6.2 Dashboard Sections
-- Quick Actions (SFC, DISM, Network)
-- Recent History (last 5 operations)
-- System Status
-- Restore Point Status
+## 8. Long-Running Operations
 
-### 6.3 Tools Section
-- System File Checker
-- DISM Repair
-- Network Reset
-- Temporary Files Cleanup
-- Duplicate File Finder
+- Show a dedicated operation panel with:
+  - Task name and status
+  - Progress bar (if measurable)
+  - Live log (auto-scroll, with pause)
+  - Cancel button
+- Do not block navigation entirely; allow the user to switch tabs.
+- Show a persistent indicator (e.g., in the top bar) if an operation is running in the background.
 
-## 7. Content Guidelines
+## 9. Accessibility Basics
 
-### 7.1 Error Messages
-- Clear title: "Permission Denied"
-- Helpful description: "Run SystemHealer as administrator"
-- Action: "Restart as Admin" button
-- No technical jargon
+Full details in `ACCESSIBILITY.md`. Quick rules:
 
-### 7.2 Success Messages
-- Brief confirmation: "Scan completed"
-- Key result: "No integrity violations found"
-- Next step: "View full report"
+- All interactive elements are keyboard reachable.
+- Focus states are visible.
+- Color is never the only indicator (use icons + text).
+- Minimum contrast ratio 4.5:1 for text.
+- Respect `prefers-reduced-motion`.
 
-### 7.3 Status Messages
-- Real-time during operations
-- Progress percentage
-- Current step description
-- Allow user to cancel
+## 10. Responsive Behavior
 
-## 8. Empty States
+- Target minimum width: 1024px (desktop app).
+- Sidebar collapses below 1280px.
+- Tables become scrollable horizontally below 1024px.
+- Log panel collapses below 1280px.
 
-### 8.1 No History
-```tsx
-<div className="text-center py-12">
-  <HistoryIcon className="mx-auto h-12 w-12 text-muted-foreground" />
-  <h3 className="mt-4 text-lg font-semibold">No repair history</h3>
-  <p className="text-muted-foreground">
-    Run your first system repair to see history here.
-  </p>
-</div>
-```
+## 11. Theming
 
-### 8.2 No Search Results
-```tsx
-<div className="text-center py-12">
-  <SearchIcon className="mx-auto h-12 w-12 text-muted-foreground" />
-  <h3 className="mt-4 text-lg font-semibold">No results found</h3>
-  <p className="text-muted-foreground">
-    Try adjusting your search terms.
-  </p>
-</div>
-```
+- Light and dark mode; default follows OS (`prefers-color-scheme`).
+- Theme toggle in Settings.
+- Tokens defined in `DESIGN_SYSTEM.md`.
 
-## 9. Modals & Dialogs
+## 12. Microcopy Guidelines
 
-### 9.1 Confirmation Dialog
-- Title: Action name
-- Description: What will happen
-- Risk level: Clear indication
-- Buttons: Cancel (secondary), Confirm (primary)
+- Buttons: verb-first ("Start Repair", "Delete Files", "Create Restore Point").
+- Labels: sentence case ("Restore points", not "Restore Points").
+- Placeholders: helpful examples, not instructions.
+- Tooltips: short, explain unfamiliar terms.
 
-### 9.2 Form Dialog
-- Title at top
-- Description below title
-- Form fields in content area
-- Actions in footer
+## 13. Related Documents
+- `docs/frontend/DESIGN_SYSTEM.md`
+- `docs/frontend/ACCESSIBILITY.md`
+- `docs/api/INTEGRATION_GUIDE.md`
+- `docs/security/SECURITY.md`
 
-## 10. Data Display
-
-### 10.1 Tables
-- Sortable columns
-- Pagination (50 items per page)
-- Select rows for bulk actions
-- Show item count
-
-### 10.2 Cards
-- Consistent padding
-- Clear header with title
-- Visual separation of content
-- Action buttons at bottom
-
-### 10.3 Lists
-- Item title + subtitle
-- Status indicator
-- Timestamp
-- Expand for details
-
-## 11. Responsive Design
-
-### 11.1 Breakpoints
-| Width | Layout |
-|-------|--------|
-| < 768px | Single column, mobile nav |
-| 768-1024px | Two columns, tablet nav |
-| > 1024px | Three columns, full nav |
-
-### 11.2 Mobile Considerations
-- Touch targets: 44px minimum
-- Gestures: Swipe to delete (history)
-- Overflow menus for actions
-- Keyboard shortcuts documented
-
-## 12. Visual Design
-
-### 12.1 Shadows
-- Level 0: None
-- Level 1: `shadow-sm`
-- Level 2: `shadow-md`
-- Level 3: `shadow-lg`
-
-### 12.2 Rounded Corners
-- Cards: `rounded-lg`
-- Buttons: `rounded-md`
-- Inputs: `rounded-md`
-
-### 12.3 Borders
-- Standard: `border` (1px)
-- Subtle: `border-dashed`
-- Accent: Colored border on hover
-
-## 13. Performance UX
-
-### 13.1 Loading States
-- Skeleton screens for data
-- Progress bars for operations
-- Spinners for indeterminate waits
-- Optimistic updates where possible
-
-### 13.2 Feedback Timing
-- Instant: < 100ms (no feedback)
-- Noticeable: 100ms-1s (subtle indicator)
-- Interactive: 1s-10s (spinner + progress)
-- Long: > 10s (cancel option, estimated time)
-
-## 14. Accessibility Checklist
-
-- [ ] All interactive elements keyboard focusable
-- [ ] Color is not the only indicator
-- [ ] Alt text for images (none in v1)
-- [ ] Focus order follows visual order
-- [ ] Labels associated with inputs
-- [ ] Sufficient color contrast
+## 14. Status
+Draft — v0.1
