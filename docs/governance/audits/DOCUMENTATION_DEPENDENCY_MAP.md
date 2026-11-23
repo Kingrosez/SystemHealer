@@ -131,7 +131,7 @@ UI_UX_BRIEF.md (component assignments)
 
 ```
 SECURITY.md
-├── CODING_STANDARDS.md (references)
+├── docs/engineering/CODING_STANDARDS.md (references)
 ├── TECH_STACK.md (Spring Security context)
 ├── ARCHITECTURE.md (security boundaries)
 └── DEPLOYMENT.md (elevation requirements)
@@ -199,8 +199,8 @@ DESIGN_SYSTEM.md
 TESTING_STRATEGY.md
 ├── ACCEPTANCE_CRITERIA.md (references)
 ├── API_CONTRACT.md (endpoint test requirements)
-├── CODE_STANDARDS.md (code quality rules)
-└── FRONTEND/ACCESSIBILITY.md (accessibility tests)
+├── docs/engineering/CODING_STANDARDS.md (code quality rules)
+└── docs/frontend/ACCESSIBILITY.md (accessibility tests)
 ```
 
 ---
@@ -214,7 +214,7 @@ TESTING_STRATEGY.md
 | DATABASE_DESIGN.md (db) → | API_CONTRACT.md | ARCHITECTURE.md |  |
 | API_CONTRACT.md → | INTEGRATION_GUIDE.md | SECURITY.md |  |
 | UI_UX_BRIEF.md → | DESIGN_SYSTEM.md, ACCESSIBILITY.md | API_CONTRACT.md |  |
-| SECURITY.md → | CODE_STANDARDS.md | ARCHITECTURE.md |  |
+| SECURITY.md → | ARCHITECTURE.md | TECH_STACK.md | DEPLOYMENT.md |
 | DEPLOYMENT.md → | OBSERVABILITY.md, CONFIGURATION.md | BACKUP_AND_RECOVERY.md |  |
 
 ---
@@ -224,7 +224,7 @@ TESTING_STRATEGY.md
 For new team members or documentation consumers:
 
 1. **README.md** → Entry point
-2. **SRS.md** (pending) → Requirements
+2. **SRS.md** (165 lines, present) → Requirements
 3. **ARCHITECTURE.md** → System understanding
 4. **TECH_STACK.md** → Technology context
 5. **DATABASE_DESIGN.md** (database version) → Data model

@@ -4,7 +4,11 @@
 This document defines the accessibility standards for SystemHealer to ensure the application is usable by everyone, including users with disabilities.
 
 ## 2. WCAG Compliance Level
-SystemHealer targets **WCAG 2.1 Level AA** compliance.
+
+SystemHealer **targets** WCAG 2.1 Level AA. This document records the
+requirements and the currently-measured contrast ratios. It is a target, not
+a claim of verified conformance — no automated or manual audit has been run
+against the application as of this writing.
 
 | Criterion | Level | Description |
 |-----------|-------|-------------|
@@ -21,12 +25,20 @@ SystemHealer targets **WCAG 2.1 Level AA** compliance.
 
 | Element | Light Mode | Dark Mode |
 |---------|------------|-----------|
-| Body text | #000000 on #ffffff (21:1) | #ffffff on #0a0a0a (19:1) |
-| Primary button | #FFFFFF on #0EA5A4 (contrast ~3.2:1) | #0B0F17 on #2DD4BF (contrast ~8.5:1) |
-| Warning | #000000 on #f59e0b (4.5:1) | #000000 on #fbbf24 (4.8:1) |
-| Destructive | #ffffff on #ef4444 (4.5:1) | #000000 on #f87171 (4.8:1) |
+| Body text | #000000 on #ffffff (21.0:1) | #ffffff on #0a0a0a (19.8:1) |
+| Primary button | #FFFFFF on #0EA5A4 (**3.0:1**) | #0B0F17 on #2DD4BF (**10.3:1**) |
+| Warning | #000000 on #D97706 (6.6:1) | #000000 on #FBBF24 (12.6:1) |
+| Destructive | #ffffff on #ef4444 (**3.8:1**) | #000000 on #f87171 (7.6:1) |
 
-Note: For primary buttons, bold text ≥18px qualifies as "large text" under WCAG AA, where 3:1 contrast is acceptable.
+Note: Ratios above were recomputed with sRGB linearization and the WCAG
+2.1 contrast formula against the color values recorded in this table. The
+light-mode primary button (3.0:1) and light-mode destructive button (3.8:1)
+are **below the 4.5:1 required for normal text**.
+
+**Large-text exception (WCAG 1.4.3):** the 3:1 threshold applies only to
+"large text" — defined as **18 pt regular (~24 px) or 14 pt bold (~18.7 px)**,
+not to 18 px bold. The primary button does not currently meet the large-text
+definition, so 3.0:1 is **not** sufficient for it under AA.
 
 ### 3.1 Testing Color Contrast
 - WebAIM Contrast Checker
@@ -255,10 +267,10 @@ it('is accessible', async () => {
 
 | Requirement | Status |
 |-------------|--------|
-| WCAG 2.1 Level AA conformance | AA |
+| WCAG 2.1 Level AA conformance | **Target — not yet verified** (no audit run) |
 | Keyboard navigation support | ✅ |
 | Screen reader announcements | ✅ |
-| Color contrast ratios | ✅ |
+| Color contrast ratios | ⚠️ **Partially met** — light primary button 3.0:1 and light destructive button 3.8:1 are below the 4.5:1 normal-text threshold |
 | Focus management | ✅ |
 | Semantic HTML | ✅ |
 | ARIA attributes | ✅ |

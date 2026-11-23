@@ -29,7 +29,7 @@ upload copies. The three audit files live under
 | AGENTS.md | 140 | Complete draft | AI agent operating rules |
 | CHANGELOG.md | 40 | Complete draft | Version history |
 | CONTRIBUTING.md | 116 | Complete draft | Contribution workflow |
-| DOCUMENTATION_INVENTORY.md | 134 | Complete draft | This canonical Markdown catalogue |
+| DOCUMENTATION_INVENTORY.md | 159 | Complete draft | This canonical Markdown catalogue |
 | PRD.md | 113 | Complete draft | Product requirements |
 | PROJECT_REQUIREMENTS.md | 79 | Complete draft | Project scope and requirements |
 | README.md | 21 | Complete draft | Project overview (existing file) |
@@ -72,7 +72,7 @@ upload copies. The three audit files live under
 ### Frontend Documentation
 | File | Lines | Status | Purpose |
 |------|-------|--------|---------|
-| docs/frontend/ACCESSIBILITY.md | 267 | Complete draft | WCAG 2.1 AA compliance |
+| docs/frontend/ACCESSIBILITY.md | 279 | Complete draft | WCAG 2.1 AA target, measured contrast ratios, known gaps |
 | docs/frontend/DESIGN_SYSTEM.md | 179 | Complete draft | Color tokens, typography, spacing, components |
 | docs/frontend/UI_UX_BRIEF.md | 309 | Complete draft | Component mappings and design brief |
 | docs/frontend/UI_UX_GUIDELINES.md | 141 | Complete draft | User experience principles |
@@ -107,9 +107,9 @@ upload copies. The three audit files live under
 ### Audit Documentation
 | File | Lines | Status | Purpose |
 |------|-------|--------|---------|
-| docs/governance/audits/DOCUMENTATION_AUDIT_REPORT.md | 198 | Complete draft | Documentation audit findings |
+| docs/governance/audits/DOCUMENTATION_AUDIT_REPORT.md | 203 | Complete draft | Documentation audit findings |
 | docs/governance/audits/DOCUMENTATION_DEPENDENCY_MAP.md | 293 | Complete draft | Documentation hierarchy and dependencies |
-| docs/governance/audits/DOCUMENTATION_RECONCILIATION_REPORT.md | 286 | Complete draft | Documentation reconciliation results |
+| docs/governance/audits/DOCUMENTATION_RECONCILIATION_REPORT.md | 290 | Complete draft | Documentation reconciliation results |
 
 ---
 
@@ -128,10 +128,17 @@ None - all referenced files exist and are complete drafts.
 
 ### Cross-Reference Issues
 
-| Referenced From | Expected To | Status |
-|-----------------|-------------|--------|
-| ARCHITECTURE.md:7 | DESIGN_SYSTEM.md | EXISTS - cross-reference valid |
-| SECURITY.md:153 | CODING_STANDARDS.md | EXISTS - cross-reference valid |
+**None.** A repository-wide scan found no broken cross-references. Two
+references that appeared in earlier drafts of this inventory were
+fabricated and do not exist in the source files:
+
+| Claimed Reference | Reality |
+|-------------------|---------|
+| `ARCHITECTURE.md:7 → DESIGN_SYSTEM.md` | **Never existed.** ARCHITECTURE.md:7 is architecture prose; the file contains no reference to DESIGN_SYSTEM.md. |
+| `SECURITY.md:153 → CODING_STANDARDS.md` | **Never existed.** SECURITY.md:153 lists `docs/architecture/ARCHITECTURE.md` and `docs/architecture/ARCHITECTURE_DECISIONS.md`. It contains no reference to CODING_STANDARDS.md. |
+
+All cross-references in this inventory now use repository-relative paths
+verified against the actual files.
 
 ---
 
@@ -140,10 +147,10 @@ None - all referenced files exist and are complete drafts.
 | Range | Count |
 |-------|-------|
 | 0-50 lines | 2 files |
-| 51-100 lines | 6 files |
-| 101-200 lines | 16 files |
-| 201-400 lines | 12 files |
-| 400+ lines | 4 files |
+| 51-100 lines | 4 files |
+| 101-200 lines | 23 files |
+| 201-400 lines | 7 files |
+| 400+ lines | 1 file |
 
 ---
 

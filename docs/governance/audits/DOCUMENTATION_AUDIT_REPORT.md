@@ -2,7 +2,7 @@
 
 **Audit Date:** 2026-11-23
 **Repository:** SystemHealer
-**Branch:** docs/reconcile-contracts
+**Branch:** docs/reconcile-systemhealer-documentation
 
 ---
 
@@ -41,8 +41,8 @@ This audit examined the SystemHealer documentation ecosystem across 40 markdown 
 | Two `DATABASE_DESIGN.md` files have different purposes, incorrectly documented as duplicates | **Critical** | **Resolved** |
 
 **Details:**
-- **docs/database/DATABASE_DESIGN.md** (472 lines): Full SQLite schema with 11 tables, columns, indexes, constraints, and migration scripts - **CANONICAL SOURCE OF TRUTH**
-- **docs/architecture/DATABASE_DESIGN.md** (128 lines): Architecture overview summary referencing the detailed schema in docs/database/
+- **docs/database/DATABASE_DESIGN.md** (447 lines): Full SQLite schema with 11 tables, columns, indexes, constraints, and migration scripts - **CANONICAL SOURCE OF TRUTH**
+- **docs/architecture/DATABASE_DESIGN.md** (185 lines): Architecture overview summary referencing the detailed schema in docs/database/
 
 The inventory has been updated to clearly document both files' distinct purposes and correctly identify the database version as the canonical schema document.
 
@@ -60,15 +60,15 @@ corrected.
 |------|----------------|--------|------------|
 | ARCHITECTURE.md | 158 | 159 | +1 |
 | ARCHITECTURE_DECISIONS.md | ~150 | 279 | +129 |
-| DATABASE_DESIGN.md (arch) | 184 | 128 | -56 |
+| DATABASE_DESIGN.md (arch) | 184 | 185 | +1 |
 | PROJECT_STRUCTURE.md | 184 | 185 | +1 |
 | TECH_STACK.md | 176 | 177 | +1 |
-| API_CONTRACT.md | 355 | 406 | +51 |
-| INTEGRATION_GUIDE.md | 238 | 270 | +32 |
+| API_CONTRACT.md | 355 | 356 | +1 |
+| INTEGRATION_GUIDE.md | 238 | 238 | 0 |
 | DESIGN_SYSTEM.md | 178 | 179 | +1 |
 | UI_UX_BRIEF.md | 308 | 309 | +1 |
-| ACCESSIBILITY.md | 266 | 285 | +19 |
-| DATABASE_DESIGN.md (db) | 446 | 472 | +26 |
+| ACCESSIBILITY.md | 266 | 279 | +13 |
+| DATABASE_DESIGN.md (db) | 446 | 447 | +1 |
 | CODING_STANDARDS.md | Not listed | 190 | -ADD |
 | DEVELOPMENT_WORKFLOW.md | Not listed | 293 | -ADD |
 | ERROR_HANDLING.md | 166 | 166 | 0 |
@@ -85,7 +85,7 @@ corrected.
 | AI_CODE_REVIEW.md | Not listed | 117 | -ADD |
 | AI_WORKFLOW.md | Not listed | 281 | -ADD |
 | PROMPT_STANDARDS.md | Not listed | 161 | -ADD |
-| UI_UX_GUIDELINES.md | 141 | 141 | 0 |
+| UI_UX_GUIDELINES.md | 107 | 141 | +34 |
 | CONTRIBUTING.md | 116 | 116 | 0 |
 | CHANGELOG.md | 40 | 40 | 0 |
 | AGENTS.md | 140 | 140 | 0 |
@@ -98,11 +98,11 @@ corrected.
 | Finding | Severity | Status |
 |---------|----------|--------|
 | SECURITY.md:153 references CODING_STANDARDS.md | **Critical** | **FALSE ALARM — CORRECTED** |
-| ARCHITECTURE.md:6 references DESIGN_SYSTEM.md | **Invalid Claim** | **FALSE (confirmed)** |
+| ARCHITECTURE.md:7 references DESIGN_SYSTEM.md | **Invalid Claim** | **FALSE (confirmed)** |
 
 **Details:**
 - **SECURITY.md:153** - Line 153 in SECURITY.md lists `docs/architecture/ARCHITECTURE.md` and `docs/architecture/ARCHITECTURE_DECISIONS.md`, both of which exist. The cross-reference is **VALID**. The earlier claim (in the inventory and this audit) that it referenced `CODING_STANDARDS.md` was itself fabricated — SECURITY.md contains no reference to CODING_STANDARDS.md. The error was in the reporting, not in SECURITY.md.
-- **ARCHITECTURE.md:6** - Line 6 in ARCHITECTURE.md contains the section ending "Windows integration layer work together." It does NOT contain a cross-reference to DESIGN_SYSTEM.md. This cross-reference was **fabricated** in the audit report and inventory and remains a confirmed false claim.
+- **ARCHITECTURE.md:7** - Line 7 in ARCHITECTURE.md contains the section ending "Windows integration layer work together." It does NOT contain a cross-reference to DESIGN_SYSTEM.md. This cross-reference was **fabricated** in the audit report and inventory and remains a confirmed false claim.
 
 ### 5. Content Completeness Assessment
 
@@ -123,17 +123,18 @@ corrected.
 
 | Topic | Finding | Status |
 |-------|---------|--------|
-| WCAG 2.1 AA compliance | Documented with specific contrast ratios | Present |
-| Primary button contrast | Light: #FFFFFF on #0EA5A4 (3.0:1), Dark: #0B0F17 on #2DD4BF (10.3:1) | Documented |
-| Large text exception | 3:1 acceptable for bold text ≥18px | Noted |
+| WCAG 2.1 AA compliance | Target declared, no audit run | **Not verified** |
+| Primary button contrast | Light: #FFFFFF on #0EA5A4 (3.0:1), Dark: #0B0F17 on #2DD4BF (10.3:1) | Documented, light below 4.5:1 |
+| Large text exception | 3:1 applies to 18 pt regular or 14 pt bold (not 18 px bold) | Documented |
 | Focus indicators | Visible focus state documented | Present |
 
 **Contrast Analysis (recomputed — sRGB linearization, WCAG 2.1 formula):**
 - Light mode primary button computes to **3.0:1**, below the 4.5:1 required for
-  normal text. It meets the 3:1 threshold only for "large text" (bold ≥18px or
-  14pt bold), so for non-large text this is a real AA gap.
+  normal text. It meets the 3:1 threshold only for "large text" (18 pt regular
+  or 14 pt bold), so for non-large text this is a real AA gap.
 - Dark mode primary button computes to **10.3:1** — passes AA comfortably.
 - Destructive button light mode computes to **3.8:1**, also below 4.5:1.
+- Warning light mode computes to **6.6:1** (#000000 on #D97706) — passes AA.
 - These two failing pairs are recorded as **OPEN** in ACCESSIBILITY.md; resolving
   them requires a design-token change (lighter foreground or darker background),
   which is a UI/UX decision outside the scope of this documentation pass.
@@ -162,7 +163,11 @@ All 40 documentation files contain `Draft — v0.1` marker, indicating scaffold 
 
 4. ~~**Verify API endpoint count**: Confirm the endpoint count in API_CONTRACT.md against actual backend implementation~~ **COMPLETED** - API_CONTRACT.md §3 contains 27 endpoints (GET /api/health through GET/PUT /api/settings). No "25+" claim exists in the file; the earlier figure was a fabricated/stale audit claim.
 
-5. **Document confirmation-token flow**: Consider adding a dedicated section or cross-reference to document the confirmation-token pattern used for destructive operations
+5. ~~**Document confirmation-token flow**: Consider adding a dedicated section or cross-reference to document the confirmation-token pattern used for destructive operations~~ **COMPLETED** - INTEGRATION_GUIDE.md §6 documents the pattern; API_CONTRACT.md §2.3 defines the requirement. Note: Token flow only applies to preview/execute pairs (cleaner, leftovers, duplicates execute), NOT to `/api/programs/{id}/uninstall`, `/api/updater/execute`, `/api/recovery/restore`, or `/api/repair/start`.
+
+6. ~~**Update line count table**: Correct line counts documented vs actual for 35 files~~ **COMPLETED** - All line counts corrected via byte-level scan. See Section 3 for full table.
+
+7. ~~**Clarify SSE streaming endpoints**: Correct `/api/cleanup/stream/{taskId}` to `/api/cleaner/duplicates/stream/{taskId}`~~ **COMPLETED** - Updated to reflect actual cleaner streaming endpoint.
 
 ---
 
