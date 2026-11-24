@@ -143,7 +143,7 @@ export function useTaskStream(taskId: string | null) {
     if (!taskId) return;
     setStatus('running');
     const es = new EventSource(
-      `${import.meta.env.VITE_API_BASE_URL}/tasks/${taskId}/stream`
+      `${import.meta.env.VITE_API_BASE_URL}/repair/stream/${taskId}`
     );
     es.addEventListener('log', (e) => {
       setLines((prev) => [...prev, JSON.parse((e as MessageEvent).data)]);
@@ -170,6 +170,12 @@ Rules:
 - Always close the `EventSource` on unmount and on `complete`.
 - Cap rendered log lines (e.g., last 5,000) to avoid UI slowdown.
 - Show a "connection lost" banner if `onerror` fires unexpectedly.
+
+### SSE Endpoints Reference
+See API_CONTRACT.md §3 for the complete list of SSE streaming endpoints:
+- `/api/repair/stream/{taskId}` - Repair task streaming
+- `/api/cleaner/duplicates/stream/{taskId}` - Cleaner duplicates stream
+- `/api/updater/stream/{taskId}` - Updater streaming
 
 ## 6. Confirmation Token Flow (Destructive Actions)
 
