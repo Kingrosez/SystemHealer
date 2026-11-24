@@ -57,7 +57,7 @@ upload copies. The three audit files live under
 | File | Lines | Status | Purpose |
 |------|-------|--------|---------|
 | docs/api/API_CONTRACT.md | 356 | Complete draft | 27 REST endpoints with schemas |
-| docs/api/INTEGRATION_GUIDE.md | 238 | Complete draft | Frontend-backend integration |
+| docs/api/INTEGRATION_GUIDE.md | 244 | Complete draft | Frontend-backend integration |
 
 ### Database Documentation
 | File | Lines | Status | Purpose |
@@ -149,7 +149,7 @@ verified against the actual files.
 | 0-50 lines | 2 files |
 | 51-100 lines | 4 files |
 | 101-200 lines | 23 files |
-| 201-400 lines | 7 files |
+| 201-400 lines | 10 files |
 | 400+ lines | 1 file |
 
 ---

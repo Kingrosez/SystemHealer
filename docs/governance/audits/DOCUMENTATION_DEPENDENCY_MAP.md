@@ -131,14 +131,13 @@ UI_UX_BRIEF.md (component assignments)
 
 ```
 SECURITY.md
-├── docs/engineering/CODING_STANDARDS.md (references)
 ├── TECH_STACK.md (Spring Security context)
 ├── ARCHITECTURE.md (security boundaries)
 └── DEPLOYMENT.md (elevation requirements)
 ```
 
 **Key Cross-References:**
-- SECURITY.md:153 → docs/architecture/ARCHITECTURE.md, docs/architecture/ARCHITECTURE_DECISIONS.md (NOT CODING_STANDARDS.md)
+- SECURITY.md:153 → docs/architecture/ARCHITECTURE.md, docs/architecture/ARCHITECTURE_DECISIONS.md
 - ACCESSIBILITY.md → DESIGN_SYSTEM.md (focus indicators, color contrast)
 
 ---
@@ -165,7 +164,6 @@ OBSERVABILITY.md
 CODING_STANDARDS.md
 ├── ERROR_HANDLING.md (references)
 ├── TESTING_STRATEGY.md (references)
-├── SECURITY.md (references)
 └── PERFORMANCE.md (references)
 ```
 
