@@ -1,0 +1,7 @@
+export { ConfirmRepairDialog } from './ConfirmRepairDialog'
+export { RestorePointWarningDialog } from './RestorePointWarningDialog'
+export { UninstallConfirmationDialog } from './UninstallConfirmationDialog'
+export { LeftoversPreviewDialog } from './LeftoversPreviewDialog'
+export { CleanupPreviewDialog } from './CleanupPreviewDialog'
+export { DuplicateDeletionDialog } from './DuplicateDeletionDialog'
+export { HighRiskConfirmationDialog } from './HighRiskConfirmationDialog'
