@@ -19,10 +19,20 @@ export interface SystemInfo {
 
 export const healthQueryKey = ['health'] as const
 
+type HealthResponse = Omit<HealthStatus, 'uptimeSeconds'> & {
+  uptimeSeconds: number | string
+}
+
 export function useHealth() {
   return useQuery({
     queryKey: healthQueryKey,
-    queryFn: () => apiFetch<HealthStatus>('/health'),
+    queryFn: async () => {
+      const data = await apiFetch<HealthResponse>('/health')
+      return {
+        ...data,
+        uptimeSeconds: Number(data.uptimeSeconds),
+      } satisfies HealthStatus
+    },
     staleTime: 30_000,
     retry: 2,
   })

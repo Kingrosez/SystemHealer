@@ -1,27 +1,73 @@
 import { useRestorePoints, useCreateRestorePoint, useRestore } from '@/hooks/useRestorePoints'
+import type { RestorePoint } from '@/hooks/useRestorePoints'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { toast } from 'sonner'
 import { Clock, Plus, RotateCcw, Shield, AlertCircle } from 'lucide-react'
 import { useState } from 'react'
 
+function getErrorMessage(error: unknown, fallback: string) {
+  if (
+    typeof error === 'object' &&
+    error !== null &&
+    'userMessage' in error &&
+    typeof error.userMessage === 'string'
+  ) {
+    return error.userMessage
+  }
+  return fallback
+}
+
 export function RestorePointsPage() {
   const [description, setDescription] = useState('')
+  const [pointToRestore, setPointToRestore] = useState<RestorePoint | null>(null)
   const { data: points, isLoading } = useRestorePoints()
   const createPoint = useCreateRestorePoint()
   const restore = useRestore()
 
   const handleCreate = () => {
-    if (description.trim()) {
-      createPoint.mutate({ description: description.trim() })
-    }
+    const trimmed = description.trim()
+    if (!trimmed) return
+
+    createPoint.mutate(
+      { description: trimmed },
+      {
+        onSuccess: () => {
+          setDescription('')
+          toast.success('Restore point created.')
+        },
+        onError: (error) => {
+          toast.error(getErrorMessage(error, 'Could not create restore point.'))
+        },
+      }
+    )
   }
 
-  const handleRestore = (pointId: string) => {
-    if (confirm('Are you sure you want to restore the system to this point? This is irreversible.')) {
-      restore.mutate({ pointId, confirm: true })
-    }
+  const handleRestore = () => {
+    if (!pointToRestore) return
+
+    restore.mutate(
+      { pointId: pointToRestore.id, confirm: true },
+      {
+        onSuccess: () => {
+          setPointToRestore(null)
+          toast.success('System restore started.')
+        },
+        onError: (error) => {
+          toast.error(getErrorMessage(error, 'Could not start the system restore.'))
+        },
+      }
+    )
   }
 
   if (isLoading) {
@@ -84,7 +130,7 @@ export function RestorePointsPage() {
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => handleRestore(point.id)}
+                  onClick={() => setPointToRestore(point)}
                   disabled={restore.isPending}
                 >
                   <RotateCcw className="mr-1 h-3 w-3" />
@@ -103,6 +149,51 @@ export function RestorePointsPage() {
           </Alert>
         )}
       </Card>
+
+      <Dialog
+        open={pointToRestore !== null}
+        onOpenChange={(open) => {
+          if (!open && !restore.isPending) {
+            setPointToRestore(null)
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <RotateCcw className="size-5" />
+              Restore system?
+            </DialogTitle>
+            <DialogDescription>
+              Restore to &quot;{pointToRestore?.description}&quot;? This action is irreversible.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="flex items-start gap-2 rounded-md bg-warning/10 p-3 text-sm">
+            <AlertCircle className="size-4 shrink-0 text-warning mt-0.5" />
+            <span className="text-foreground">
+              Save your work before continuing. The system may restart.
+            </span>
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setPointToRestore(null)}
+              disabled={restore.isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleRestore}
+              disabled={restore.isPending}
+            >
+              {restore.isPending ? 'Restoring...' : 'Restore'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

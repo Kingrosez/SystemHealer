@@ -11,6 +11,7 @@ import { DuplicateFinderPage } from '@/pages/DuplicateFinderPage'
 import { RestorePointsPage } from '@/pages/RestorePointsPage'
 import { DiskAnalyzerPage } from '@/pages/DiskAnalyzerPage'
 import { StartupManagerPage } from '@/pages/StartupManagerPage'
+import { NotFoundPage } from '@/pages/NotFoundPage'
 
 const queryClient = new QueryClient()
 
@@ -38,6 +39,7 @@ const router = createHashRouter([
       { path: '/restore-points', element: <RestorePointsPage /> },
       { path: '/disk-analyzer', element: <DiskAnalyzerPage /> },
       { path: '/startup-manager', element: <StartupManagerPage /> },
+      { path: '*', element: <NotFoundPage /> },
     ],
   },
 ])
