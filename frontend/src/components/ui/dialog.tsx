@@ -33,6 +33,19 @@ const Dialog = ({ open = false, onOpenChange, children }: DialogProps) => {
     [onOpenChange]
   );
 
+  React.useEffect(() => {
+    if (!internalOpen) return;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        handleOpenChange(false);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [internalOpen, handleOpenChange]);
+
   return (
     <DialogContext.Provider value={{ open: internalOpen, onOpenChange: handleOpenChange }}>
       {children}
@@ -100,8 +113,10 @@ const DialogContent = ({ className, children }: DialogContentProps) => {
     <DialogPortal>
       <DialogOverlay onClick={() => ctx.onOpenChange(false)} />
       <div
+        role="dialog"
+        aria-modal="true"
         className={cn(
-          "fixed z-50 grid w-full max-w-lg gap-4 border bg-background p-6 shadow-lg duration-200",
+          "fixed left-1/2 top-1/2 z-50 grid w-[calc(100%-2rem)] max-w-lg -translate-x-1/2 -translate-y-1/2 gap-4 rounded-lg border bg-background p-6 shadow-lg duration-200",
           "animate-in fade-in-0 zoom-in-95",
           "data-[state=open]:animate-in data-[state=closed]:animate-out",
           "data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",

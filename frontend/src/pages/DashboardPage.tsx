@@ -101,7 +101,7 @@ export function DashboardPage() {
             <span className="text-sm text-muted-foreground">BitLocker</span>
             <HardDrive className="h-5 w-5 text-primary" />
           </div>
-          <Badge variant={systemInfo?.bitLockerEnabled ? 'secondary' : 'default'} className="mt-2">
+          <Badge variant={systemInfo?.bitLockerEnabled ? 'default' : 'secondary'} className="mt-2">
             {systemInfo?.bitLockerEnabled ? 'Enabled' : 'Disabled'}
           </Badge>
         </Card>
