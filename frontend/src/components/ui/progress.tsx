@@ -9,23 +9,29 @@ export interface ProgressProps extends React.HTMLAttributes<HTMLDivElement> {
 }
 
 const Progress = React.forwardRef<HTMLDivElement, ProgressProps>(
-  ({ className, value = 0, ...props }, ref) => (
-    <div
-      ref={ref}
-      className={cn(
-        "relative h-4 w-full overflow-hidden rounded-full bg-secondary",
-        className
-      )}
-      {...props}
-    >
+  ({ className, value = 0, ...props }, ref) => {
+    const clamped = Number.isFinite(value) ? Math.min(100, Math.max(0, value)) : 0;
+
+    return (
       <div
-        className="h-full w-full transition-all duration-300"
-        style={{ transform: `translateX(-${100 - value}%)`, width: `${value}%` }}
+        ref={ref}
+        role="progressbar"
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={clamped}
+        className={cn(
+          "relative h-4 w-full overflow-hidden rounded-full bg-secondary",
+          className
+        )}
+        {...props}
       >
-        <div className="h-full bg-primary text-primary-foreground transition-all duration-300" />
+        <div
+          className="h-full bg-primary transition-all duration-300"
+          style={{ width: `${clamped}%` }}
+        />
       </div>
-    </div>
-  )
+    );
+  }
 );
 Progress.displayName = "Progress";
 
