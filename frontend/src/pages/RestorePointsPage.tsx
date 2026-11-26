@@ -13,25 +13,14 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { toast } from 'sonner'
+import { isApiError } from '@/lib/api'
 import { Clock, Plus, RotateCcw, Shield, AlertCircle } from 'lucide-react'
 import { useState } from 'react'
-
-function getErrorMessage(error: unknown, fallback: string) {
-  if (
-    typeof error === 'object' &&
-    error !== null &&
-    'userMessage' in error &&
-    typeof error.userMessage === 'string'
-  ) {
-    return error.userMessage
-  }
-  return fallback
-}
 
 export function RestorePointsPage() {
   const [description, setDescription] = useState('')
   const [pointToRestore, setPointToRestore] = useState<RestorePoint | null>(null)
-  const { data: points, isLoading } = useRestorePoints()
+  const { data: points, isLoading, error } = useRestorePoints()
   const createPoint = useCreateRestorePoint()
   const restore = useRestore()
 
@@ -46,8 +35,12 @@ export function RestorePointsPage() {
           setDescription('')
           toast.success('Restore point created.')
         },
-        onError: (error) => {
-          toast.error(getErrorMessage(error, 'Could not create restore point.'))
+        onError: (err) => {
+          toast.error(
+            isApiError(err)
+              ? err.userMessage
+              : 'Could not create restore point.'
+          )
         },
       }
     )
@@ -63,11 +56,20 @@ export function RestorePointsPage() {
           setPointToRestore(null)
           toast.success('System restore started.')
         },
-        onError: (error) => {
-          toast.error(getErrorMessage(error, 'Could not start the system restore.'))
+        onError: (err) => {
+          toast.error(
+            isApiError(err)
+              ? err.userMessage
+              : 'Could not start the system restore.'
+          )
         },
       }
     )
+  }
+
+  const closeRestoreDialog = () => {
+    setPointToRestore(null)
+    restore.reset()
   }
 
   if (isLoading) {
@@ -88,6 +90,18 @@ export function RestorePointsPage() {
         </p>
       </div>
 
+      {error && (
+        <Alert variant="destructive">
+          <AlertCircle className="h-4 w-4" />
+          <AlertTitle>Could not load restore points</AlertTitle>
+          <AlertDescription>
+            {isApiError(error)
+              ? error.userMessage
+              : 'An unexpected error occurred while loading restore points.'}
+          </AlertDescription>
+        </Alert>
+      )}
+
       <Card className="p-4">
         <h3 className="mb-3 font-semibold">Create Restore Point</h3>
         <div className="flex gap-2">
@@ -96,6 +110,8 @@ export function RestorePointsPage() {
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             placeholder="e.g., Before cleanup"
+            maxLength={200}
+            aria-label="Restore point description"
             className="flex-1 rounded-md border border-input bg-background px-3 py-2 text-sm"
           />
           <Button
@@ -103,7 +119,7 @@ export function RestorePointsPage() {
             disabled={createPoint.isPending || !description.trim()}
           >
             <Plus className="mr-2 h-4 w-4" />
-            Create
+            {createPoint.isPending ? 'Creating...' : 'Create'}
           </Button>
         </div>
       </Card>
@@ -130,7 +146,10 @@ export function RestorePointsPage() {
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => setPointToRestore(point)}
+                  onClick={() => {
+                    restore.reset()
+                    setPointToRestore(point)
+                  }}
                   disabled={restore.isPending}
                 >
                   <RotateCcw className="mr-1 h-3 w-3" />
@@ -139,7 +158,7 @@ export function RestorePointsPage() {
               </div>
             ))}
           </div>
-        ) : (
+        ) : !error ? (
           <Alert>
             <AlertCircle className="h-4 w-4" />
             <AlertTitle>No restore points</AlertTitle>
@@ -147,14 +166,14 @@ export function RestorePointsPage() {
               No system restore points are available. Create one above.
             </AlertDescription>
           </Alert>
-        )}
+        ) : null}
       </Card>
 
       <Dialog
         open={pointToRestore !== null}
         onOpenChange={(open) => {
           if (!open && !restore.isPending) {
-            setPointToRestore(null)
+            closeRestoreDialog()
           }
         }}
       >
@@ -176,10 +195,22 @@ export function RestorePointsPage() {
             </span>
           </div>
 
+          {restore.isError && (
+            <Alert variant="destructive">
+              <AlertCircle className="h-4 w-4" />
+              <AlertTitle>Could not start restore</AlertTitle>
+              <AlertDescription>
+                {isApiError(restore.error)
+                  ? restore.error.userMessage
+                  : 'An unexpected error occurred while starting the restore.'}
+              </AlertDescription>
+            </Alert>
+          )}
+
           <DialogFooter>
             <Button
               variant="outline"
-              onClick={() => setPointToRestore(null)}
+              onClick={closeRestoreDialog}
               disabled={restore.isPending}
             >
               Cancel

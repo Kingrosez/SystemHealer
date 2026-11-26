@@ -1,3 +1,4 @@
+import { toast } from 'sonner'
 import {
   Dialog,
   DialogContent,
@@ -10,12 +11,15 @@ import { Button } from '@/components/ui/button'
 import { Copy, AlertCircle } from 'lucide-react'
 import { useDuplicateExecute } from '@/hooks/useCleaner'
 import type { DuplicateGroup } from '@/hooks/useCleaner'
+import { isApiError } from '@/lib/api'
+import { formatBytes } from '@/lib/utils'
 
 interface DuplicateDeletionDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   confirmToken?: string
   duplicates?: DuplicateGroup[]
+  fileIds?: string[]
   onFinished?: () => void
 }
 
@@ -24,21 +28,35 @@ export function DuplicateDeletionDialog({
   onOpenChange,
   confirmToken,
   duplicates = [],
+  fileIds,
   onFinished,
 }: DuplicateDeletionDialogProps) {
   const execute = useDuplicateExecute()
 
+  const handleOpenChange = (next: boolean) => {
+    if (!next) {
+      execute.reset()
+    }
+    onOpenChange(next)
+  }
+
+  const defaultFileIds = duplicates.flatMap((group) =>
+    group.files.slice(1).map((f) => f.id)
+  )
+  const idsToDelete = fileIds ?? defaultFileIds
+
   const handleDelete = () => {
-    if (!confirmToken) return
-    // Keep one original per group; delete the rest.
-    const fileIds = duplicates.flatMap((group) =>
-      group.files.slice(1).map((f) => f.id)
-    )
-    if (fileIds.length === 0) return
+    if (!confirmToken || idsToDelete.length === 0) return
     execute.mutate(
-      { confirmToken, fileIds },
+      { confirmToken, fileIds: idsToDelete },
       {
-        onSuccess: () => {
+        onSuccess: (result) => {
+          toast.success('Duplicates deleted', {
+            description:
+              result.failures.length > 0
+                ? `${result.deleted} deleted, ${result.failures.length} failed.`
+                : `${result.deleted} file(s) deleted.`,
+          })
           onFinished?.()
           onOpenChange(false)
         },
@@ -47,7 +65,7 @@ export function DuplicateDeletionDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="sm:max-w-3xl max-h-[80vh] flex flex-col">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
@@ -55,7 +73,10 @@ export function DuplicateDeletionDialog({
             Duplicate Files
           </DialogTitle>
           <DialogDescription>
-            Found {duplicates.length} group{duplicates.length !== 1 ? 's of' : ''} duplicates
+            Found {duplicates.length} group{duplicates.length !== 1 ? 's of' : ''} duplicates.
+            {idsToDelete.length > 0
+              ? ` ${idsToDelete.length} file(s) will be deleted, keeping one copy per group.`
+              : ''}
           </DialogDescription>
         </DialogHeader>
 
@@ -75,31 +96,34 @@ export function DuplicateDeletionDialog({
                     <div>
                       <h4 className="font-medium">{group.files.length} copies</h4>
                       <p className="text-sm text-muted-foreground">
-                        {group.sizeBytes.toLocaleString()} bytes · hash{' '}
+                        {formatBytes(group.sizeBytes)} · hash{' '}
                         {group.hash.slice(0, 12)}...
                       </p>
                     </div>
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                    {group.files.map((file, i) => (
-                      <div
-                        key={file.id}
-                        className="flex items-center justify-between rounded bg-muted/30 p-2 text-sm"
-                      >
-                        <div className="flex items-center gap-2 min-w-0">
-                          <span className="text-xs">📄</span>
-                          <span className="truncate" title={file.path}>
-                            {file.path}
-                          </span>
-                          {i === 0 && (
-                            <span className="text-xs text-muted-foreground">
-                              (kept)
+                    {group.files.map((file) => {
+                      const willDelete = idsToDelete.includes(file.id)
+                      return (
+                        <div
+                          key={file.id}
+                          className="flex items-center justify-between rounded bg-muted/30 p-2 text-sm"
+                        >
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className="text-xs">📄</span>
+                            <span className="truncate" title={file.path}>
+                              {file.path}
                             </span>
-                          )}
+                            {!willDelete && (
+                              <span className="text-xs text-muted-foreground">
+                                (kept)
+                              </span>
+                            )}
+                          </div>
                         </div>
-                      </div>
-                    ))}
+                      )
+                    })}
                   </div>
                 </div>
               ))}
@@ -110,7 +134,9 @@ export function DuplicateDeletionDialog({
             <div className="flex items-start gap-2 rounded-md bg-destructive/10 p-3 text-sm">
               <AlertCircle className="size-4 shrink-0 text-destructive mt-0.5" />
               <span className="text-foreground">
-                Failed to delete duplicates. Please try again.
+                {isApiError(execute.error)
+                  ? execute.error.userMessage
+                  : 'Failed to delete duplicates. Please try again.'}
               </span>
             </div>
           )}
@@ -130,7 +156,7 @@ export function DuplicateDeletionDialog({
             disabled={
               execute.isPending ||
               !confirmToken ||
-              duplicates.flatMap((g) => g.files.slice(1).map((f) => f.id)).length === 0
+              idsToDelete.length === 0
             }
           >
             {execute.isPending ? 'Deleting...' : 'Delete Duplicates'}

@@ -39,6 +39,10 @@ public final class ErrorCodes {
     public static final String WINGET_UNAVAILABLE = "WINGET_UNAVAILABLE";
     public static final String UPDATER_EXECUTE_FAILED = "UPDATER_EXECUTE_FAILED";
 
+    // Disk analyzer errors
+    public static final String DISK_DRIVE_NOT_FOUND = "DISK_DRIVE_NOT_FOUND";
+    public static final String DISK_SCAN_FAILED = "DISK_SCAN_FAILED";
+
     // Duplicate finder errors
     public static final String DUPLICATE_ALREADY_SELECTED = "DUPLICATE_ALREADY_SELECTED";
 

@@ -1,6 +1,5 @@
 package com.systemhealer.controller;
 
-import com.systemhealer.api.CleanerExecuteRequest;
 import com.systemhealer.api.CleanerExecuteResponse;
 import com.systemhealer.api.CleanerPreviewResponse;
 import com.systemhealer.api.CleanerScanRequest;
@@ -8,6 +7,8 @@ import com.systemhealer.api.CleanerScanResponse;
 import com.systemhealer.api.DuplicateExecuteRequest;
 import com.systemhealer.api.DuplicateExecuteResponse;
 import com.systemhealer.api.DuplicateGroupsResponse;
+import com.systemhealer.api.DuplicatePreviewRequest;
+import com.systemhealer.api.DuplicatePreviewResponse;
 import com.systemhealer.api.DuplicateScanRequest;
 import com.systemhealer.api.DuplicateScanResponse;
 import com.systemhealer.api.RepairHistoryDetail;
@@ -31,7 +32,9 @@ import org.springframework.validation.annotation.Validated;
 
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 
@@ -84,15 +87,16 @@ public class CleanerController {
 
     @PostMapping("/scan")
     public ResponseEntity<CleanerScanResponse> scan(@RequestBody @Valid CleanerScanRequest request) {
-        Task task = taskRepository.save(new Task(TaskType.CLEANER, TaskStatus.PENDING, "Cleaner scan"));
+        Task task = new Task(TaskType.CLEANER, TaskStatus.RUNNING, "Cleaner scan");
+        Task savedTask = taskRepository.save(task);
 
-        final String taskId = task.getId();
-        final CleanerScanRequest scanRequest = request;
+        final String taskId = savedTask.getId();
         CompletableFuture.runAsync(() -> {
-            cleanerService.startScan(taskRepository.findById(taskId).orElse(task), scanRequest);
+            Task t = taskRepository.findById(taskId).orElse(savedTask);
+            cleanerService.startScan(t, request);
         });
 
-        return ResponseEntity.accepted().body(new CleanerScanResponse(task.getId(), "/api/cleaner/stream/" + task.getId()));
+        return ResponseEntity.accepted().body(new CleanerScanResponse(savedTask.getId(), "/api/cleaner/stream/" + savedTask.getId()));
     }
 
     @PostMapping("/preview")
@@ -118,15 +122,16 @@ public class CleanerController {
 
     @PostMapping("/duplicates/scan")
     public ResponseEntity<DuplicateScanResponse> duplicateScan(@RequestBody @Valid DuplicateScanRequest request) {
-        Task task = taskRepository.save(new Task(TaskType.DUPLICATE_SCAN, TaskStatus.PENDING, "Duplicate scan"));
+        Task task = new Task(TaskType.DUPLICATE_SCAN, TaskStatus.RUNNING, "Duplicate scan");
+        Task savedTask = taskRepository.save(task);
 
-        final String taskId = task.getId();
-        final DuplicateScanRequest scanRequest = request;
+        final String taskId = savedTask.getId();
         CompletableFuture.runAsync(() -> {
-            cleanerService.startDuplicateScan(taskRepository.findById(taskId).orElse(task), scanRequest);
+            Task t = taskRepository.findById(taskId).orElse(savedTask);
+            cleanerService.startDuplicateScan(t, request);
         });
 
-        return ResponseEntity.accepted().body(new DuplicateScanResponse(task.getId(), "/api/cleaner/duplicates/stream/" + task.getId()));
+        return ResponseEntity.accepted().body(new DuplicateScanResponse(savedTask.getId(), "/api/cleaner/duplicates/stream/" + savedTask.getId()));
     }
 
     @GetMapping("/duplicates/stream/{taskId}")
@@ -149,6 +154,23 @@ public class CleanerController {
         return ResponseEntity.ok(cleanerService.getDuplicateGroups(page, size));
     }
 
+    @PostMapping("/duplicates/preview")
+    public ResponseEntity<DuplicatePreviewResponse> duplicatePreview(
+            @RequestBody(required = false) DuplicatePreviewRequest request) {
+        int page = request != null && request.getPage() >= 0 ? request.getPage() : 0;
+        int size = request != null && request.getSize() > 0 ? request.getSize() : 50;
+
+        DuplicateGroupsResponse groups = cleanerService.getDuplicateGroups(page, size);
+        String token = tokenService.generateToken("duplicate-preview-" + UUID.randomUUID());
+
+        return ResponseEntity.ok(new DuplicatePreviewResponse(
+                groups.getItems(),
+                groups.getPage(),
+                groups.getSize(),
+                groups.getTotal(),
+                token));
+    }
+
     @PostMapping("/duplicates/execute")
     public ResponseEntity<DuplicateExecuteResponse> duplicateExecute(@RequestBody @Valid DuplicateExecuteRequest request) {
         tokenService.validateToken(request.getConfirmToken())
@@ -156,6 +178,8 @@ public class CleanerController {
                         "Invalid or expired confirmation token",
                         ErrorCodes.INVALID_CONFIRM_TOKEN,
                         HttpStatus.CONFLICT));
+
+        validateDuplicateDeletion(request.getFileIds());
         tokenService.consumeToken(request.getConfirmToken());
 
         DuplicateExecuteResponse response = cleanerService.executeDuplicates(request.getFileIds());
@@ -170,5 +194,30 @@ public class CleanerController {
                         ErrorCodes.TASK_NOT_FOUND,
                         HttpStatus.NOT_FOUND));
         return new SSEView(taskId);
+    }
+
+    private void validateDuplicateDeletion(List<String> fileIds) {
+        if (fileIds == null || fileIds.isEmpty()) {
+            return;
+        }
+
+        Set<String> selected = new HashSet<>(fileIds);
+        DuplicateGroupsResponse groups = cleanerService.getDuplicateGroups(0, Integer.MAX_VALUE);
+
+        for (DuplicateGroupsResponse.DuplicateGroup group : groups.getItems()) {
+            List<DuplicateGroupsResponse.DuplicateGroup.DuplicateFile> files = group.getFiles();
+            if (files == null || files.isEmpty()) {
+                continue;
+            }
+
+            boolean keepsAtLeastOne = files.stream()
+                    .anyMatch(file -> !selected.contains(file.getId()));
+            if (!keepsAtLeastOne) {
+                throw new SystemHealerException(
+                        "Cannot delete every copy in duplicate group " + group.getGroupId(),
+                        ErrorCodes.WOULD_DELETE_ALL_COPIES,
+                        HttpStatus.CONFLICT);
+            }
+        }
     }
 }

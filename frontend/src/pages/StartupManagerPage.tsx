@@ -4,10 +4,11 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { isApiError } from '@/lib/api'
 import { AlertCircle, Power, PowerOff, Settings } from 'lucide-react'
 
 export function StartupManagerPage() {
-  const { data: programs, isLoading } = useStartupPrograms()
+  const { data: programs, isLoading, error } = useStartupPrograms()
   const toggle = useToggleStartup()
 
   if (isLoading) {
@@ -28,52 +29,94 @@ export function StartupManagerPage() {
         </p>
       </div>
 
+      {error && (
+        <Alert variant="destructive">
+          <AlertCircle className="h-4 w-4" />
+          <AlertTitle>Could not load startup programs</AlertTitle>
+          <AlertDescription>
+            {isApiError(error)
+              ? error.userMessage
+              : 'An unexpected error occurred while loading startup programs.'}
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {toggle.isError && (
+        <Alert variant="destructive">
+          <AlertCircle className="h-4 w-4" />
+          <AlertTitle>Could not update startup program</AlertTitle>
+          <AlertDescription>
+            {isApiError(toggle.error)
+              ? toggle.error.userMessage
+              : 'An unexpected error occurred while updating the startup program.'}
+          </AlertDescription>
+        </Alert>
+      )}
+
       <Card className="p-4">
         {programs && programs.items.length > 0 ? (
           <div className="space-y-2">
-            {programs.items.map((prog) => (
-              <div
-                key={prog.id}
-                className="flex items-center justify-between rounded-md border p-3"
-              >
-                <div className="flex items-center gap-3">
-                  <Settings className="h-5 w-5 text-muted-foreground" />
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate font-medium">{prog.name}</p>
-                    <p className="truncate text-xs text-muted-foreground">
-                      {prog.publisher} · {prog.path}
-                    </p>
+            {programs.items.map((prog) => {
+              const isToggling =
+                toggle.isPending && toggle.variables?.id === prog.id
+
+              return (
+                <div
+                  key={prog.id}
+                  className="flex items-center justify-between rounded-md border p-3"
+                >
+                  <div className="flex items-center gap-3">
+                    <Settings className="h-5 w-5 text-muted-foreground" />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate font-medium">{prog.name}</p>
+                      <p className="truncate text-xs text-muted-foreground">
+                        {prog.publisher} · {prog.path}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Badge variant={prog.enabled ? 'default' : 'secondary'}>
+                      {prog.enabled ? 'Enabled' : 'Disabled'}
+                    </Badge>
+                    <Badge
+                      variant={
+                        prog.impact === 'high'
+                          ? 'destructive'
+                          : prog.impact === 'medium'
+                            ? 'secondary'
+                            : 'default'
+                      }
+                    >
+                      {prog.impact}
+                    </Badge>
+                    <Button
+                      variant={prog.enabled ? 'outline' : 'default'}
+                      size="sm"
+                      onClick={() =>
+                        toggle.mutate({ id: prog.id, enabled: !prog.enabled })
+                      }
+                      disabled={isToggling}
+                      aria-label={
+                        prog.enabled
+                          ? `Disable ${prog.name}`
+                          : `Enable ${prog.name}`
+                      }
+                      title={
+                        prog.enabled
+                          ? `Disable ${prog.name}`
+                          : `Enable ${prog.name}`
+                      }
+                    >
+                      {prog.enabled ? (
+                        <PowerOff className="h-3 w-3" />
+                      ) : (
+                        <Power className="h-3 w-3" />
+                      )}
+                    </Button>
                   </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <Badge
-                    variant={
-                      prog.impact === 'high'
-                        ? 'destructive'
-                        : prog.impact === 'medium'
-                          ? 'secondary'
-                          : 'default'
-                    }
-                  >
-                    {prog.impact}
-                  </Badge>
-                  <Button
-                    variant={prog.enabled ? 'outline' : 'default'}
-                    size="sm"
-                    onClick={() =>
-                      toggle.mutate({ id: prog.id, enabled: !prog.enabled })
-                    }
-                    disabled={toggle.isPending}
-                  >
-                    {prog.enabled ? (
-                      <PowerOff className="h-3 w-3" />
-                    ) : (
-                      <Power className="h-3 w-3" />
-                    )}
-                  </Button>
-                </div>
-              </div>
-            ))}
+              )
+            })}
           </div>
         ) : (
           <Alert>

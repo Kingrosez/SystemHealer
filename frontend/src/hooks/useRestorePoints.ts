@@ -1,4 +1,4 @@
-import { useMutation, useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { apiFetch } from '@/lib/api'
 
 export interface RestorePoint {
@@ -42,12 +42,41 @@ export function useRestorePoints() {
 }
 
 export function useCreateRestorePoint() {
+  const queryClient = useQueryClient()
+
   return useMutation({
     mutationFn: (data: CreateRestorePointRequest) =>
       apiFetch<CreateRestorePointResponse>('/recovery/restore-points', {
         method: 'POST',
         body: JSON.stringify(data),
       }),
+    onSuccess: (created, variables) => {
+      queryClient.setQueryData<RestorePointsResponse>(
+        restorePointsQueryKey,
+        (current) => {
+          if (!current) return current
+
+          const nextSequence =
+            current.points.reduce(
+              (max, point) => Math.max(max, point.sequenceNumber),
+              0
+            ) + 1
+
+          return {
+            ...current,
+            points: [
+              {
+                id: created.id,
+                description: variables.description,
+                createdAt: created.createdAt,
+                sequenceNumber: nextSequence,
+              },
+              ...current.points,
+            ],
+          }
+        }
+      )
+    },
   })
 }
 

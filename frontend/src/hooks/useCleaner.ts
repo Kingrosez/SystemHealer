@@ -1,4 +1,4 @@
-import { useMutation, useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { apiFetch } from '@/lib/api'
 
 export interface CleanerScanRequest {
@@ -75,6 +75,15 @@ export interface DuplicateExecuteResponse {
   failures: string[]
 }
 
+export interface DuplicatePreviewRequest {
+  page?: number
+  size?: number
+}
+
+export interface DuplicatePreviewResponse extends DuplicateGroupsResponse {
+  confirmToken: string
+}
+
 export const cleanerQueryKey = ['cleaner'] as const
 
 export function useCleanerScan() {
@@ -97,12 +106,17 @@ export function useCleanerPreview() {
 }
 
 export function useCleanerExecute() {
+  const queryClient = useQueryClient()
+
   return useMutation({
     mutationFn: (data: CleanerExecuteRequest) =>
       apiFetch<CleanerExecuteResponse>('/cleaner/execute', {
         method: 'POST',
         body: JSON.stringify(data),
       }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: cleanerQueryKey })
+    },
   })
 }
 
@@ -128,12 +142,27 @@ export function useDuplicateGroups(page = 0, size = 50) {
   })
 }
 
+export function useDuplicatePreview() {
+  return useMutation({
+    mutationFn: (data: DuplicatePreviewRequest = {}) =>
+      apiFetch<DuplicatePreviewResponse>('/cleaner/duplicates/preview', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
+  })
+}
+
 export function useDuplicateExecute() {
+  const queryClient = useQueryClient()
+
   return useMutation({
     mutationFn: (data: DuplicateExecuteRequest) =>
       apiFetch<DuplicateExecuteResponse>('/cleaner/duplicates/execute', {
         method: 'POST',
         body: JSON.stringify(data),
       }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: cleanerQueryKey })
+    },
   })
 }

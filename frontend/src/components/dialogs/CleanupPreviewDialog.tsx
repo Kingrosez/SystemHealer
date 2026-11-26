@@ -1,3 +1,5 @@
+import { useEffect, useRef } from 'react'
+import { toast } from 'sonner'
 import {
   Dialog,
   DialogContent,
@@ -9,6 +11,8 @@ import {
 import { Button } from '@/components/ui/button'
 import { Brush, AlertCircle, CheckCircle, XCircle } from 'lucide-react'
 import { useCleanerPreview, useCleanerExecute } from '@/hooks/useCleaner'
+import { isApiError } from '@/lib/api'
+import { formatBytes } from '@/lib/utils'
 
 interface CleanupPreviewDialogProps {
   open: boolean
@@ -23,6 +27,22 @@ export function CleanupPreviewDialog({
 }: CleanupPreviewDialogProps) {
   const preview = useCleanerPreview()
   const execute = useCleanerExecute()
+  const lastPreviewOpen = useRef(false)
+
+  useEffect(() => {
+    if (!open) {
+      lastPreviewOpen.current = false
+      return
+    }
+    if (lastPreviewOpen.current) {
+      return
+    }
+
+    lastPreviewOpen.current = true
+    execute.reset()
+    preview.reset()
+    preview.mutate()
+  }, [open, preview, execute])
 
   const items = preview.data?.items ?? []
   const totalSizeBytes = preview.data?.totalSizeBytes ?? 0
@@ -33,14 +53,8 @@ export function CleanupPreviewDialog({
     (i) => i.category === 'temp' || i.category === 'logs'
   )
 
-  const formatBytes = (bytes: number) => {
-    if (bytes >= 1_000_000_000) return `${(bytes / 1_000_000_000).toFixed(1)} GB`
-    if (bytes >= 1_000_000) return `${(bytes / 1_000_000).toFixed(1)} MB`
-    if (bytes >= 1_000) return `${(bytes / 1_000).toFixed(1)} KB`
-    return `${bytes} B`
-  }
-
   const handlePreview = () => {
+    execute.reset()
     preview.mutate()
   }
 
@@ -52,13 +66,25 @@ export function CleanupPreviewDialog({
         paths: items.map((i) => i.path),
       },
       {
-        onSuccess: () => {
+        onSuccess: (result) => {
+          toast.success('Cleanup complete', {
+            description:
+              result.failures.length > 0
+                ? `${result.deleted} deleted, ${result.failures.length} failed.`
+                : `${result.deleted} item(s) deleted.`,
+          })
           onFinished?.()
           onOpenChange(false)
         },
       }
     )
   }
+
+  const errorMessage = isApiError(execute.error)
+    ? execute.error.userMessage
+    : isApiError(preview.error)
+      ? preview.error.userMessage
+      : null
 
   const isWorking = preview.isPending || execute.isPending
 
@@ -78,9 +104,17 @@ export function CleanupPreviewDialog({
         </DialogHeader>
 
         <div className="flex-1 overflow-y-auto space-y-4">
-          {!preview.data ? (
+          {preview.isPending ? (
             <div className="text-center py-8 text-muted-foreground">
-              <p>Click preview to scan for cache and temp files.</p>
+              <p>Scanning for cache and temp files...</p>
+            </div>
+          ) : !preview.data ? (
+            <div className="text-center py-8 text-muted-foreground">
+              <p>
+                {preview.isError
+                  ? 'Cleanup preview failed. Try again.'
+                  : 'Click preview to scan for cache and temp files.'}
+              </p>
             </div>
           ) : (
             <>
@@ -151,12 +185,10 @@ export function CleanupPreviewDialog({
             </>
           )}
 
-          {preview.isError && (
+          {errorMessage && (
             <div className="flex items-start gap-2 rounded-md bg-destructive/10 p-3 text-sm">
               <AlertCircle className="size-4 shrink-0 text-destructive mt-0.5" />
-              <span className="text-foreground">
-                Failed to preview cleanup items. Please try again.
-              </span>
+              <span className="text-foreground">{errorMessage}</span>
             </div>
           )}
         </div>
