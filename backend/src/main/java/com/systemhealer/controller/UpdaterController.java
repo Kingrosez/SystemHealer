@@ -34,15 +34,15 @@ public class UpdaterController {
     @PostMapping("/execute")
     public ResponseEntity<UpdaterExecuteResponse> execute(@RequestBody UpdaterExecuteRequest request) {
         Task task = new Task(TaskType.UPDATER, TaskStatus.RUNNING, "Update: " + request.getIds());
-        task = taskRepository.save(task);
+        Task savedTask = taskRepository.save(task);
 
-        final String taskId = task.getId();
+        final String taskId = savedTask.getId();
         CompletableFuture.runAsync(() -> {
-            Task t = taskRepository.findById(taskId).orElse(task);
+            Task t = taskRepository.findById(taskId).orElse(savedTask);
             updaterService.execute(t, request.getIds());
         });
 
-        return ResponseEntity.accepted().body(new UpdaterExecuteResponse(task.getId(), "/api/updater/stream/" + task.getId()));
+        return ResponseEntity.accepted().body(new UpdaterExecuteResponse(savedTask.getId(), "/api/updater/stream/" + savedTask.getId()));
     }
 
     @GetMapping("/stream/{taskId}")

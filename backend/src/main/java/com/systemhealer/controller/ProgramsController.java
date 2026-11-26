@@ -46,15 +46,15 @@ public class ProgramsController {
             @PathVariable String id,
             @RequestBody(required = false) UninstallRequest request) {
         Task task = new Task(TaskType.PROGRAM_UNINSTALL, TaskStatus.RUNNING, "Uninstall: " + id);
-        task = taskRepository.save(task);
+        Task savedTask = taskRepository.save(task);
 
-        final String taskId = task.getId();
+        final String taskId = savedTask.getId();
         CompletableFuture.runAsync(() -> {
-            Task t = taskRepository.findById(taskId).orElse(task);
+            Task t = taskRepository.findById(taskId).orElse(savedTask);
             programService.uninstall(t, id, request != null && request.isForce());
         });
 
-        return ResponseEntity.accepted().body(new UninstallResponse(task.getId(), "/api/programs/" + id + "/stream/" + task.getId()));
+        return ResponseEntity.accepted().body(new UninstallResponse(savedTask.getId(), "/api/programs/" + id + "/stream/" + savedTask.getId()));
     }
 
     @PostMapping("/{id}/leftovers/preview")
