@@ -1,6 +1,6 @@
 -- V3: Create repair log lines table for SSE streaming
 CREATE TABLE IF NOT EXISTS repair_logs (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id INTEGER PRIMARY KEY,
     task_id TEXT NOT NULL,
     line TEXT NOT NULL,
     level TEXT NOT NULL DEFAULT 'INFO',
