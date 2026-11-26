@@ -45,4 +45,12 @@ public interface TaskRepository extends JpaRepository<Task, String> {
      * @ optional task
      */
     Optional<Task> findById(String id);
+
+    /**
+     * Find all tasks by type, ordered by start time descending.
+     *
+     * @param type the task type to filter by
+     * @return list of tasks with the given type, newest first
+     */
+    List<Task> findByTypeOrderByStartedAtDesc(TaskType type);
 }

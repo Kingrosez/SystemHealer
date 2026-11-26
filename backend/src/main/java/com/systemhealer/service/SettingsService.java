@@ -1,5 +1,6 @@
 package com.systemhealer.service;
 
+import com.systemhealer.api.SettingsRequest;
 import com.systemhealer.api.SettingsResponse;
 import com.systemhealer.model.AppSettings;
 import com.systemhealer.repository.AppSettingsRepository;
@@ -39,24 +40,5 @@ public class SettingsService {
 
         settingsRepository.save(settings);
         return getSettings();
-    }
-
-    public static class SettingsRequest {
-        private Integer logRetentionDays;
-        private List<String> defaultScanRoots;
-        private String theme;
-        private Boolean createRestorePointByDefault;
-
-        public Integer getLogRetentionDays() { return logRetentionDays; }
-        public void setLogRetentionDays(Integer logRetentionDays) { this.logRetentionDays = logRetentionDays; }
-
-        public List<String> getDefaultScanRoots() { return defaultScanRoots; }
-        public void setDefaultScanRoots(List<String> defaultScanRoots) { this.defaultScanRoots = defaultScanRoots; }
-
-        public String getTheme() { return theme; }
-        public void setTheme(String theme) { this.theme = theme; }
-
-        public Boolean getCreateRestorePointByDefault() { return createRestorePointByDefault; }
-        public void setCreateRestorePointByDefault(Boolean createRestorePointByDefault) { this.createRestorePointByDefault = createRestorePointByDefault; }
     }
 }

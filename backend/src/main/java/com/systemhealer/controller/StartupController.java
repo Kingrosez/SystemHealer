@@ -4,13 +4,16 @@ import com.systemhealer.api.StartupProgramsResponse;
 import com.systemhealer.exception.SystemHealerException;
 import com.systemhealer.exception.ErrorCodes;
 import com.systemhealer.service.StartupService;
+import jakarta.validation.constraints.NotBlank;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
 @RequestMapping("/api/startup")
+@Validated
 public class StartupController {
 
     @Autowired
@@ -24,7 +27,7 @@ public class StartupController {
     }
 
     @PutMapping("/programs/{id}")
-    public ResponseEntity<Void> toggle(@PathVariable String id, @RequestBody ToggleRequest request) {
+    public ResponseEntity<Void> toggle(@PathVariable @NotBlank(message = "Program ID cannot be empty") String id, @RequestBody ToggleRequest request) {
         startupService.toggleStartup(id, request.isEnabled());
         return ResponseEntity.noContent().build();
     }
