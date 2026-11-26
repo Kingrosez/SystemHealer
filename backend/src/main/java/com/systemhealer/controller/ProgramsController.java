@@ -1,8 +1,11 @@
 package com.systemhealer.controller;
 
+import com.systemhealer.api.LeftoversExecuteRequest;
 import com.systemhealer.api.LeftoversExecuteResponse;
 import com.systemhealer.api.LeftoversPreviewResponse;
 import com.systemhealer.api.ProgramsResponse;
+import com.systemhealer.api.SSEView;
+import com.systemhealer.api.UninstallRequest;
 import com.systemhealer.api.UninstallResponse;
 import com.systemhealer.exception.SystemHealerException;
 import com.systemhealer.exception.ErrorCodes;
@@ -18,6 +21,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
@@ -50,9 +54,9 @@ public class ProgramsController {
     @PostMapping("/{id}/uninstall")
     public ResponseEntity<UninstallResponse> uninstall(
             @PathVariable @NotBlank(message = "Program ID cannot be empty") String id,
-            @RequestBody(required = false) UninstallRequest request) {
+            @RequestBody(required = false) @Valid UninstallRequest request) {
         try {
-            Task task = taskRepository.save(new Task(TaskType.PROGRAM_UNINSTALL, TaskStatus.RUNNING, "Uninstall: " + id));
+            Task task = taskRepository.save(new Task(TaskType.PROGRAM_UNINSTALL, TaskStatus.PENDING, "Uninstall: " + id));
 
             final String taskId = task.getId();
             final String programId = id;
@@ -95,7 +99,7 @@ public class ProgramsController {
     @PostMapping("/{id}/leftovers/execute")
     public ResponseEntity<LeftoversExecuteResponse> leftoversExecute(
             @PathVariable @NotBlank(message = "Program ID cannot be empty") String id,
-            @RequestBody LeftoversExecuteRequest request) {
+            @RequestBody @Valid LeftoversExecuteRequest request) {
         tokenService.validateToken(request.getConfirmToken())
                 .orElseThrow(() -> new SystemHealerException(
                         "Invalid or expired confirmation token",
@@ -114,36 +118,15 @@ public class ProgramsController {
         }
     }
 
-    public static class UninstallRequest {
-        private boolean force = false;
-
-        public boolean isForce() { return force; }
-        public void setForce(boolean force) { this.force = force; }
-    }
-
-    public static class UninstallResponse {
-        private final String taskId;
-        private final String streamUrl;
-
-        public UninstallResponse(String taskId, String streamUrl) {
-            this.taskId = taskId;
-            this.streamUrl = streamUrl;
-        }
-
-        public String getTaskId() { return taskId; }
-        public String getStreamUrl() { return streamUrl; }
-    }
-
-    public static class LeftoversExecuteRequest {
-        private String confirmToken;
-        private java.util.List<String> files = java.util.Collections.emptyList();
-        private java.util.List<String> registryKeys = java.util.Collections.emptyList();
-
-        public String getConfirmToken() { return confirmToken; }
-        public void setConfirmToken(String confirmToken) { this.confirmToken = confirmToken; }
-        public java.util.List<String> getFiles() { return files; }
-        public void setFiles(java.util.List<String> files) { this.files = files != null ? files : java.util.Collections.emptyList(); }
-        public java.util.List<String> getRegistryKeys() { return registryKeys; }
-        public void setRegistryKeys(java.util.List<String> registryKeys) { this.registryKeys = registryKeys != null ? registryKeys : java.util.Collections.emptyList(); }
+    @GetMapping("/{id}/stream/{taskId}")
+    public SSEView uninstallStream(
+            @PathVariable @NotBlank(message = "Program ID cannot be empty") String id,
+            @PathVariable @NotBlank(message = "Task ID cannot be empty") String taskId) {
+        Task task = taskRepository.findById(taskId)
+                .orElseThrow(() -> new SystemHealerException(
+                        "Task not found: " + taskId,
+                        ErrorCodes.TASK_NOT_FOUND,
+                        HttpStatus.NOT_FOUND));
+        return new SSEView(taskId);
     }
 }

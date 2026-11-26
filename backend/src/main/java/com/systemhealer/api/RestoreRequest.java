@@ -1,6 +1,9 @@
 package com.systemhealer.api;
 
+import jakarta.validation.constraints.NotBlank;
+
 public class RestoreRequest {
+    @NotBlank(message = "Point ID cannot be empty")
     private String pointId;
     private boolean confirm;
 

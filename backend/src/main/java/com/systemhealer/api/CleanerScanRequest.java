@@ -1,8 +1,12 @@
 package com.systemhealer.api;
 
+import jakarta.validation.constraints.NotEmpty;
+import jakarta.validation.constraints.NotNull;
 import java.util.List;
 
 public class CleanerScanRequest {
+    @NotNull(message = "Roots cannot be null")
+    @NotEmpty(message = "Roots must contain at least one path")
     private List<String> roots;
     private List<String> categories;
 
