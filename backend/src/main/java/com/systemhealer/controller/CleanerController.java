@@ -20,12 +20,15 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.validation.annotation.Validated;
 
+import jakarta.validation.constraints.NotBlank;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 
 @RestController
 @RequestMapping("/api/cleaner")
+@Validated
 public class CleanerController {
 
     @Autowired
@@ -39,13 +42,12 @@ public class CleanerController {
 
     @PostMapping("/scan")
     public ResponseEntity<CleanerScanResponse> scan(@RequestBody CleanerScanRequest request) {
-        Task task = new Task(TaskType.CLEANER, TaskStatus.RUNNING, "Cleaner scan");
-        task = taskRepository.save(task);
+        Task task = taskRepository.save(new Task(TaskType.CLEANER, TaskStatus.RUNNING, "Cleaner scan"));
 
         final String taskId = task.getId();
+        final CleanerScanRequest scanRequest = request;
         CompletableFuture.runAsync(() -> {
-            Task t = taskRepository.findById(taskId).orElse(task);
-            cleanerService.startScan(t, request);
+            cleanerService.startScan(taskRepository.findById(taskId).orElse(task), scanRequest);
         });
 
         return ResponseEntity.accepted().body(new CleanerScanResponse(task.getId(), "/api/cleaner/stream/" + task.getId()));
@@ -74,20 +76,19 @@ public class CleanerController {
 
     @PostMapping("/duplicates/scan")
     public ResponseEntity<DuplicateScanResponse> duplicateScan(@RequestBody DuplicateScanRequest request) {
-        Task task = new Task(TaskType.DUPLICATE_SCAN, TaskStatus.RUNNING, "Duplicate scan");
-        task = taskRepository.save(task);
+        Task task = taskRepository.save(new Task(TaskType.DUPLICATE_SCAN, TaskStatus.RUNNING, "Duplicate scan"));
 
         final String taskId = task.getId();
+        final DuplicateScanRequest scanRequest = request;
         CompletableFuture.runAsync(() -> {
-            Task t = taskRepository.findById(taskId).orElse(task);
-            cleanerService.startDuplicateScan(t, request);
+            cleanerService.startDuplicateScan(taskRepository.findById(taskId).orElse(task), scanRequest);
         });
 
         return ResponseEntity.accepted().body(new DuplicateScanResponse(task.getId(), "/api/cleaner/duplicates/stream/" + task.getId()));
     }
 
     @GetMapping("/duplicates/stream/{taskId}")
-    public SSEView duplicateStream(@PathVariable String taskId) {
+    public SSEView duplicateStream(@PathVariable @NotBlank(message = "Task ID cannot be empty") String taskId) {
         Task task = taskRepository.findById(taskId)
                 .orElseThrow(() -> new SystemHealerException(
                         "Task not found: " + taskId,
@@ -100,6 +101,9 @@ public class CleanerController {
     public ResponseEntity<DuplicateGroupsResponse> duplicateGroups(
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "50") int size) {
+        if (page < 0 || size <= 0 || size > 1000) {
+            return ResponseEntity.badRequest().build();
+        }
         return ResponseEntity.ok(cleanerService.getDuplicateGroups(page, size));
     }
 
@@ -118,24 +122,24 @@ public class CleanerController {
 
     public static class CleanerExecuteRequest {
         private String confirmToken;
-        private java.util.List<String> paths;
+        private java.util.List<String> paths = java.util.Collections.emptyList();
 
         public CleanerExecuteRequest() {}
         public String getConfirmToken() { return confirmToken; }
         public void setConfirmToken(String confirmToken) { this.confirmToken = confirmToken; }
         public java.util.List<String> getPaths() { return paths; }
-        public void setPaths(java.util.List<String> paths) { this.paths = paths; }
+        public void setPaths(java.util.List<String> paths) { this.paths = paths != null ? paths : java.util.Collections.emptyList(); }
     }
 
     public static class DuplicateExecuteRequest {
         private String confirmToken;
-        private java.util.List<String> fileIds;
+        private java.util.List<String> fileIds = java.util.Collections.emptyList();
 
         public DuplicateExecuteRequest() {}
         public String getConfirmToken() { return confirmToken; }
         public void setConfirmToken(String confirmToken) { this.confirmToken = confirmToken; }
         public java.util.List<String> getFileIds() { return fileIds; }
-        public void setFileIds(java.util.List<String> fileIds) { this.fileIds = fileIds; }
+        public void setFileIds(java.util.List<String> fileIds) { this.fileIds = fileIds != null ? fileIds : java.util.Collections.emptyList(); }
     }
 
     public static class CleanerScanResponse {

@@ -32,14 +32,20 @@ public class CleanerService {
             task.setStatus(TaskStatus.RUNNING);
             taskRepository.save(task);
 
-            // Simulated scan - in production, use PowerShell to scan for temp files, cache, logs
-            java.util.List<String> commands = java.util.List.of(
-                    "powershell -Command \"Get-ChildItem -Path " + request.getRoots().get(0) + " -Recurse -Force | Where-Object { $_.Extension -eq '.tmp' -or $_.Extension -eq '.log' } | Select-Object FullName, Length\""
-            );
+            // Validate roots - must have at least one root path
+            if (request.getRoots() == null || request.getRoots().isEmpty()) {
+                task.setStatus(TaskStatus.FAILED);
+                task.setErrorCode("INVALID_INPUT");
+                task.setErrorMessage("Scan requires at least one root path");
+                taskRepository.save(task);
+                return;
+            }
 
-            for (String cmd : commands) {
+            // Simulated scan - in production, use PowerShell to scan for temp files, cache, logs
+            for (String root : request.getRoots()) {
                 if (task.getStatus() != TaskStatus.RUNNING) break;
-                CommandRunner.CommandResult result = commandRunner.run(java.util.List.of(cmd));
+                String psCommand = "Get-ChildItem -Path " + root + " -Recurse -Force | Where-Object { $_.Extension -eq '.tmp' -or $_.Extension -eq '.log' } | Select-Object FullName, Length";
+                CommandRunner.CommandResult result = commandRunner.run(java.util.List.of("powershell", "-Command", psCommand));
                 if (result.failed()) {
                     task.setStatus(TaskStatus.FAILED);
                     task.setErrorCode("COMMAND_FAILED");
@@ -85,14 +91,20 @@ public class CleanerService {
             task.setStatus(TaskStatus.RUNNING);
             taskRepository.save(task);
 
-            // Simulated duplicate scan using PowerShell
-            java.util.List<String> commands = java.util.List.of(
-                    "powershell -Command \"Get-FileHash -Algorithm SHA256 -Path " + request.getRoots().get(0) + "\\*\""
-            );
+            // Validate roots - must have at least one root path
+            if (request.getRoots() == null || request.getRoots().isEmpty()) {
+                task.setStatus(TaskStatus.FAILED);
+                task.setErrorCode("INVALID_INPUT");
+                task.setErrorMessage("Duplicate scan requires at least one root path");
+                taskRepository.save(task);
+                return;
+            }
 
-            for (String cmd : commands) {
+            // Simulated duplicate scan using PowerShell
+            for (String root : request.getRoots()) {
                 if (task.getStatus() != TaskStatus.RUNNING) break;
-                CommandRunner.CommandResult result = commandRunner.run(java.util.List.of(cmd));
+                String psCommand = "Get-FileHash -Algorithm SHA256 -Path " + root + "\\*";
+                CommandRunner.CommandResult result = commandRunner.run(java.util.List.of("powershell", "-Command", psCommand));
                 if (result.failed()) {
                     task.setStatus(TaskStatus.FAILED);
                     task.setErrorCode("COMMAND_FAILED");

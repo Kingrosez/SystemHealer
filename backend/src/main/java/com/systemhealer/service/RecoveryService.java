@@ -10,6 +10,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
+import java.io.IOException;
 import java.time.ZonedDateTime;
 import java.util.List;
 import java.util.UUID;
@@ -43,9 +44,17 @@ public class RecoveryService {
 
     public CreateRestorePointResponse createRestorePoint(String description) {
         // In production: use Checkpoint-Computer or vssadmin create shadow
-        CommandRunner.CommandResult result = commandRunner.run(List.of(
-                "powershell", "-Command", "Checkpoint-Computer -Description \"" + description + "\" -RestorePointType MODIFY_SETTINGS"
-        ));
+        CommandRunner.CommandResult result;
+        try {
+            result = commandRunner.run(List.of(
+                    "powershell", "-Command", "Checkpoint-Computer -Description \"" + description + "\" -RestorePointType MODIFY_SETTINGS"
+            ));
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new RuntimeException("Create restore point interrupted", e);
+        } catch (IOException e) {
+            throw new RuntimeException("Create restore point failed", e);
+        }
 
         if (result.failed()) {
             throw new RuntimeException("Failed to create restore point: " + result.getStderr());
@@ -61,9 +70,15 @@ public class RecoveryService {
             taskRepository.save(task);
 
             // In production: use rstrui.exe or PowerShell Restore-Computer
-            CommandRunner.CommandResult result = commandRunner.run(List.of(
-                    "powershell", "-Command", "Restore-Computer -RestorePoint " + pointId
-            ));
+            CommandRunner.CommandResult result;
+            try {
+                result = commandRunner.run(List.of(
+                        "powershell", "-Command", "Restore-Computer -RestorePoint " + pointId
+                ));
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new RuntimeException("Restore interrupted", e);
+            }
 
             if (result.failed()) {
                 task.setStatus(TaskStatus.FAILED);

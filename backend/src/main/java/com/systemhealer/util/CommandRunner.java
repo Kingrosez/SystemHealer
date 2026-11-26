@@ -25,7 +25,7 @@ public class CommandRunner {
      * @return structured result with exit code, stdout, and stderr
      * @throws InterruptedException if the thread is interrupted
      */
-    public CommandResult run(List<String> command, int timeoutSeconds) throws InterruptedException {
+    public CommandResult run(List<String> command, int timeoutSeconds) throws InterruptedException, IOException {
         ProcessBuilder pb = new ProcessBuilder(command);
         pb.redirectErrorStream(true); // merge stderr into stdout
         pb.environment().put("PATH", System.getenv("PATH"));
@@ -96,7 +96,7 @@ public class CommandRunner {
      * @return structured result
      * @throws InterruptedException if interrupted
      */
-    public CommandResult run(List<String> command) throws InterruptedException {
+    public CommandResult run(List<String> command) throws InterruptedException, IOException {
         return run(command, DEFAULT_TIMEOUT_SECONDS);
     }
 
@@ -108,7 +108,7 @@ public class CommandRunner {
      * @return structured result
      * @throws InterruptedException if interrupted
      */
-    public CommandResult runShort(List<String> command) throws InterruptedException {
+    public CommandResult runShort(List<String> command) throws InterruptedException, IOException {
         return run(command, SHORT_TIMEOUT_SECONDS);
     }
 

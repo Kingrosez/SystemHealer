@@ -45,14 +45,15 @@ public class RepairController {
                     .body(new RepairStartResponse(null, "/api/repair/stream/" + null, "restore_point_required", token));
         }
 
-        Task task = new Task(TaskType.REPAIR, TaskStatus.RUNNING, "Repair scan: " + request.getActions());
-        task = taskRepository.save(task);
+        Task task = taskRepository.save(new Task(TaskType.REPAIR, TaskStatus.RUNNING, "Repair scan: " + request.getActions()));
 
         // Start repair asynchronously
         final String taskId = task.getId();
+        final RepairStartRequest asyncRequest = request;
+        final Task savedTask = task;
         CompletableFuture.runAsync(() -> {
-            Task t = taskRepository.findById(taskId).orElse(task);
-            repairService.startRepair(t, request);
+            Task t = taskRepository.findById(taskId).orElse(savedTask);
+            repairService.startRepair(t, asyncRequest);
         });
 
         String streamUrl = "/api/repair/stream/" + task.getId();

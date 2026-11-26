@@ -48,6 +48,12 @@ public final class ErrorCodes {
     // Confirmation token errors
     public static final String INVALID_CONFIRM_TOKEN = "INVALID_CONFIRM_TOKEN";
 
+    // Preview errors
+    public static final String PREVIEW_FAILED = "PREVIEW_FAILED";
+
+    // Leftover errors
+    public static final String LEFTOVERS_EXECUTE_FAILED = "LEFTOVERS_EXECUTE_FAILED";
+
     // Recovery errors
     public static final String RECOVERY_BLOCKED_BITLOCKER = "RECOVERY_BLOCKED_BITLOCKER";
 

@@ -48,13 +48,13 @@ public class RecoveryController {
                     HttpStatus.BAD_REQUEST);
         }
 
-        Task task = new Task(TaskType.RECOVERY, TaskStatus.RUNNING, "System restore to " + request.getPointId());
-        task = taskRepository.save(task);
+        Task task = taskRepository.save(new Task(TaskType.RECOVERY, TaskStatus.RUNNING, "System restore to " + request.getPointId()));
 
         final String taskId = task.getId();
+        final String pointId = request.getPointId();
         CompletableFuture.runAsync(() -> {
             Task t = taskRepository.findById(taskId).orElse(task);
-            recoveryService.restore(t, request.getPointId());
+            recoveryService.restore(t, pointId);
         });
 
         return ResponseEntity.accepted().body(new RestoreResponse(task.getId()));
