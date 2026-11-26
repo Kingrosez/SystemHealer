@@ -1,3 +1,5 @@
+import { useEffect, useRef } from 'react'
+import { toast } from 'sonner'
 import {
   Dialog,
   DialogContent,
@@ -9,6 +11,8 @@ import {
 import { Button } from '@/components/ui/button'
 import { Copy, AlertCircle } from 'lucide-react'
 import { useLeftoversPreview, useLeftoversExecute } from '@/hooks/useUninstall'
+import { isApiError } from '@/lib/api'
+import { formatBytes } from '@/lib/utils'
 
 interface LeftoversPreviewDialogProps {
   open: boolean
@@ -27,6 +31,22 @@ export function LeftoversPreviewDialog({
 }: LeftoversPreviewDialogProps) {
   const preview = useLeftoversPreview()
   const execute = useLeftoversExecute()
+  const lastPreviewKey = useRef<string | null>(null)
+
+  useEffect(() => {
+    if (!open) {
+      lastPreviewKey.current = null
+      return
+    }
+    if (!programId || lastPreviewKey.current === programId) {
+      return
+    }
+
+    lastPreviewKey.current = programId
+    execute.reset()
+    preview.reset()
+    preview.mutate(programId)
+  }, [open, programId, preview, execute])
 
   const data = preview.data
   const items = data?.files ?? []
@@ -35,6 +55,7 @@ export function LeftoversPreviewDialog({
 
   const handlePreview = () => {
     if (!programId) return
+    execute.reset()
     preview.mutate(programId)
   }
 
@@ -50,7 +71,13 @@ export function LeftoversPreviewDialog({
         },
       },
       {
-        onSuccess: () => {
+        onSuccess: (result) => {
+          toast.success('Leftovers removed', {
+            description:
+              result.failed > 0
+                ? `${result.deleted} removed, ${result.failed} failed.`
+                : `${result.deleted} item(s) removed.`,
+          })
           onFinished?.()
           onOpenChange(false)
         },
@@ -58,10 +85,11 @@ export function LeftoversPreviewDialog({
     )
   }
 
-  const formatSize = (size: string) => size
-  const getItemIcon = (type: 'file' | 'folder') => {
-    return type === 'folder' ? '📁' : '📄'
-  }
+  const errorMessage = isApiError(execute.error)
+    ? execute.error.userMessage
+    : isApiError(preview.error)
+      ? preview.error.userMessage
+      : null
 
   const isWorking = preview.isPending || execute.isPending
 
@@ -81,9 +109,17 @@ export function LeftoversPreviewDialog({
         </DialogHeader>
 
         <div className="flex-1 overflow-y-auto space-y-2">
-          {!preview.data ? (
+          {preview.isPending ? (
             <div className="text-center py-8 text-muted-foreground">
-              <p>Click preview to scan for leftover files and registry keys.</p>
+              <p>Scanning for leftover files and registry keys...</p>
+            </div>
+          ) : !preview.data ? (
+            <div className="text-center py-8 text-muted-foreground">
+              <p>
+                {preview.isError
+                  ? 'Leftover scan failed. Try again.'
+                  : 'Click preview to scan for leftover files and registry keys.'}
+              </p>
             </div>
           ) : items.length === 0 && registryKeys.length === 0 ? (
             <div className="text-center py-8 text-muted-foreground">
@@ -97,13 +133,11 @@ export function LeftoversPreviewDialog({
                   className="flex items-center justify-between rounded-md border p-3 text-sm hover:bg-muted/50"
                 >
                   <div className="flex items-center gap-3">
-                    <span className="text-lg">
-                      {getItemIcon('file')}
-                    </span>
+                    <span className="text-lg">📄</span>
                     <div>
                       <div className="font-medium">{item.path}</div>
                       <div className="text-xs text-muted-foreground">
-                        {formatSize(String(item.sizeBytes))}
+                        {formatBytes(item.sizeBytes)}
                       </div>
                     </div>
                   </div>
@@ -137,12 +171,10 @@ export function LeftoversPreviewDialog({
           )}
         </div>
 
-        {preview.isError && (
+        {errorMessage && (
           <div className="flex items-start gap-2 rounded-md bg-destructive/10 p-3 text-sm">
             <AlertCircle className="size-4 shrink-0 text-destructive mt-0.5" />
-            <span className="text-foreground">
-              Failed to preview leftovers. Please try again.
-            </span>
+            <span className="text-foreground">{errorMessage}</span>
           </div>
         )}
 
@@ -162,7 +194,11 @@ export function LeftoversPreviewDialog({
             <Button
               variant="destructive"
               onClick={handleRemoveAll}
-              disabled={execute.isPending || items.length === 0 && registryKeys.length === 0 || !confirmToken}
+              disabled={
+                execute.isPending ||
+                (items.length === 0 && registryKeys.length === 0) ||
+                !confirmToken
+              }
             >
               {execute.isPending ? 'Removing...' : 'Remove All'}
             </Button>

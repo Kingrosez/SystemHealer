@@ -27,6 +27,11 @@ contract. Any change requires an update to this document **before** code changes
 }
 ```
 
+- `userMessage` is **required** on every error response and is the only
+  message safe to show to end users.
+- `traceId` is optional but should be included when available to aid support.
+- `path` is the request path that produced the error.
+
 ### 2.2 Standard Success Envelope (for list endpoints)
 ```json
 {
@@ -45,12 +50,19 @@ Destructive endpoints require a two-step flow:
 
 Tokens are single-use and expire after 5 minutes.
 
+For duplicate deletion the preview step is
+`POST /api/cleaner/duplicates/preview` (see §4.26); its `confirmToken` must be
+sent to `POST /api/cleaner/duplicates/execute`.
+
 ## 3. Endpoint Index
 
 | Method | Path | Module | Purpose |
 |--------|------|--------|---------|
 | GET | `/api/health` | common | Health check |
 | GET | `/api/system/info` | common | OS, CPU, RAM, admin status, BitLocker |
+| GET | `/api/disk/usage` | disk | Drive list + latest usage scan results |
+| POST | `/api/disk/scan` | disk | Start an asynchronous disk usage scan |
+| GET | `/api/disk/stream/{taskId}` | disk | SSE disk scan progress |
 | GET | `/api/repair/options` | repair | Available repair actions |
 | POST | `/api/repair/start` | repair | Start a repair run |
 | GET | `/api/repair/stream/{taskId}` | repair | SSE log stream |
@@ -67,6 +79,7 @@ Tokens are single-use and expire after 5 minutes.
 | POST | `/api/cleaner/duplicates/scan` | cleaner | Start duplicate scan |
 | GET | `/api/cleaner/duplicates/stream/{taskId}` | cleaner | SSE duplicate scan progress |
 | GET | `/api/cleaner/duplicates/groups` | cleaner | Paginated duplicate groups |
+| POST | `/api/cleaner/duplicates/preview` | cleaner | Preview duplicate groups + confirmToken |
 | POST | `/api/cleaner/duplicates/execute` | cleaner | Delete selected duplicates |
 | GET | `/api/updater/scan` | updater | Scan for outdated software |
 | POST | `/api/updater/execute` | updater | Execute updates |
@@ -124,8 +137,25 @@ Response 202:
 ```
 
 Notes:
-- If `createRestorePoint` is true, the backend creates a restore point first.
-- If restore point creation fails, returns 409 with code `RESTORE_POINT_FAILED`.
+- If `createRestorePoint` is `true`, the request must include a valid
+  `X-Confirm-Token` header. Tokens are single-use and expire after 5 minutes.
+- Without a valid token the backend responds `409` with a challenge body:
+
+```json
+{
+  "taskId": null,
+  "streamUrl": null,
+  "restorePointStatus": "restore_point_required",
+  "restorePointToken": "rp_..."
+}
+```
+
+- The client should create a restore point via §4.23, then retry the request
+  with `X-Confirm-Token: <restorePointToken>`. The backend does not create the
+  restore point itself.
+- If `createRestorePoint` is `false`, no token is required.
+- If restore point creation fails, the client may still retry with the token
+  after the user explicitly acknowledges the warning.
 
 ### 4.5 GET `/api/repair/stream/{taskId}` (SSE)
 Response: `text/event-stream`. Events:
@@ -262,6 +292,7 @@ Request:
 ```
 
 Response 200: `{ "deleted": 2, "freedBytes": 2048, "failures": [] }`
+The `confirmToken` must come from `POST /api/cleaner/duplicates/preview` (§4.26).
 Server rejects any request that would delete **all** copies in a group (409 `WOULD_DELETE_ALL_COPIES`).
 
 ### 4.20 GET `/api/updater/scan`
@@ -308,6 +339,90 @@ Settings shape (key-value):
   "createRestorePointByDefault": true
 }
 ```
+
+### 4.26 POST `/api/cleaner/duplicates/preview`
+Request (pagination is optional):
+```json
+{ "page": 0, "size": 50 }
+```
+
+Response 200:
+```json
+{
+  "items": [
+    {
+      "groupId": "uuid",
+      "hash": "sha256:...",
+      "sizeBytes": 1024,
+      "files": [
+        { "id": "uuid", "path": "D:\\a\\file.txt", "modifiedAt": "..." },
+        { "id": "uuid", "path": "D:\\b\\file.txt", "modifiedAt": "..." }
+      ]
+    }
+  ],
+  "page": 0,
+  "size": 50,
+  "total": 12,
+  "confirmToken": "tok_dupe_..."
+}
+```
+
+Notes:
+- The token is single-use, expires after 5 minutes, and must be sent to
+  `POST /api/cleaner/duplicates/execute` (§4.19).
+- The client must keep at least one file selected per group; the server
+  rejects any request that would delete every copy in a group with
+  409 `WOULD_DELETE_ALL_COPIES`.
+
+### 4.27 GET `/api/disk/usage`
+Response 200:
+```json
+{
+  "drives": [
+    {
+      "letter": "C:",
+      "label": "System",
+      "totalBytes": 512000000000,
+      "usedBytes": 300000000000,
+      "freeBytes": 212000000000,
+      "fileSystem": "NTFS"
+    }
+  ],
+  "usage": [
+    {
+      "path": "C:\\Users",
+      "name": "Users",
+      "sizeBytes": 123456789,
+      "isDirectory": true,
+      "children": []
+    }
+  ]
+}
+```
+
+Notes:
+- `usage` holds the most recent scan results and may be empty before the
+  first scan.
+- `children` is optional and may be omitted for leaf items.
+
+### 4.28 POST `/api/disk/scan`
+Request:
+```json
+{ "drive": "C:", "maxDepth": 3 }
+```
+
+Response 202:
+```json
+{ "taskId": "uuid", "streamUrl": "/api/disk/stream/uuid" }
+```
+
+Notes:
+- The scan runs asynchronously. The client may poll `GET /api/disk/usage`
+  for updated results or consume the SSE stream.
+
+### 4.29 GET `/api/disk/stream/{taskId}` (SSE)
+Response: `text/event-stream`. Events follow the standard pattern used by the
+other streaming endpoints (`progress`, `log`, `complete`, see §4.5).
 
 ## 5. HTTP Status Codes
 

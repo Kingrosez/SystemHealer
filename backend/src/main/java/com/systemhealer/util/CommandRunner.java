@@ -30,7 +30,16 @@ public class CommandRunner {
         pb.redirectErrorStream(true); // merge stderr into stdout
         pb.environment().put("PATH", System.getenv("PATH"));
 
-        Process process = pb.start();
+        Process process;
+        try {
+            process = pb.start();
+        } catch (IOException e) {
+            return new CommandResult(
+                    -1,
+                    "",
+                    "Failed to start command: " + e.getMessage()
+            );
+        }
 
         // Read output in a separate thread to avoid deadlock
         StringBuilder output = new StringBuilder();

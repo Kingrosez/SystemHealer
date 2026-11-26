@@ -43,9 +43,15 @@ public class RecoveryService {
 
     public CreateRestorePointResponse createRestorePoint(String description) {
         // In production: use Checkpoint-Computer or vssadmin create shadow
-        CommandRunner.CommandResult result = commandRunner.run(List.of(
-                "powershell", "-Command", "Checkpoint-Computer -Description \"" + description + "\" -RestorePointType MODIFY_SETTINGS"
-        ));
+        CommandRunner.CommandResult result;
+        try {
+            result = commandRunner.run(List.of(
+                    "powershell", "-Command", "Checkpoint-Computer -Description \"" + description + "\" -RestorePointType MODIFY_SETTINGS"
+            ));
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new RuntimeException("Failed to create restore point: interrupted", e);
+        }
 
         if (result.failed()) {
             throw new RuntimeException("Failed to create restore point: " + result.getStderr());

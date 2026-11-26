@@ -1,4 +1,4 @@
-import { useMutation, useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { apiFetch } from '@/lib/api'
 
 export interface StartupProgram {
@@ -36,11 +36,30 @@ export function useStartupPrograms() {
 }
 
 export function useToggleStartup() {
+  const queryClient = useQueryClient()
+
   return useMutation({
     mutationFn: ({ id, enabled }: { id: string; enabled: boolean }) =>
       apiFetch<void>(`/startup/programs/${id}`, {
         method: 'PUT',
         body: JSON.stringify({ enabled } satisfies ToggleStartupRequest),
       }),
+    onSuccess: (_data, variables) => {
+      queryClient.setQueryData<StartupProgramsResponse>(
+        startupQueryKey,
+        (current) => {
+          if (!current) return current
+
+          return {
+            ...current,
+            items: current.items.map((item) =>
+              item.id === variables.id
+                ? { ...item, enabled: variables.enabled }
+                : item
+            ),
+          }
+        }
+      )
+    },
   })
 }

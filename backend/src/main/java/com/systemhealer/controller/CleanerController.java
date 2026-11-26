@@ -6,6 +6,7 @@ import com.systemhealer.api.CleanerScanRequest;
 import com.systemhealer.api.CleanerScanResponse;
 import com.systemhealer.api.DuplicateExecuteResponse;
 import com.systemhealer.api.DuplicateGroupsResponse;
+import com.systemhealer.api.DuplicatePreviewResponse;
 import com.systemhealer.api.DuplicateScanRequest;
 import com.systemhealer.api.DuplicateScanResponse;
 import com.systemhealer.exception.SystemHealerException;
@@ -21,6 +22,9 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 
@@ -40,15 +44,15 @@ public class CleanerController {
     @PostMapping("/scan")
     public ResponseEntity<CleanerScanResponse> scan(@RequestBody CleanerScanRequest request) {
         Task task = new Task(TaskType.CLEANER, TaskStatus.RUNNING, "Cleaner scan");
-        task = taskRepository.save(task);
+        Task savedTask = taskRepository.save(task);
 
-        final String taskId = task.getId();
+        final String taskId = savedTask.getId();
         CompletableFuture.runAsync(() -> {
-            Task t = taskRepository.findById(taskId).orElse(task);
+            Task t = taskRepository.findById(taskId).orElse(savedTask);
             cleanerService.startScan(t, request);
         });
 
-        return ResponseEntity.accepted().body(new CleanerScanResponse(task.getId(), "/api/cleaner/stream/" + task.getId()));
+        return ResponseEntity.accepted().body(new CleanerScanResponse(savedTask.getId(), "/api/cleaner/stream/" + savedTask.getId()));
     }
 
     @PostMapping("/preview")
@@ -75,15 +79,15 @@ public class CleanerController {
     @PostMapping("/duplicates/scan")
     public ResponseEntity<DuplicateScanResponse> duplicateScan(@RequestBody DuplicateScanRequest request) {
         Task task = new Task(TaskType.DUPLICATE_SCAN, TaskStatus.RUNNING, "Duplicate scan");
-        task = taskRepository.save(task);
+        Task savedTask = taskRepository.save(task);
 
-        final String taskId = task.getId();
+        final String taskId = savedTask.getId();
         CompletableFuture.runAsync(() -> {
-            Task t = taskRepository.findById(taskId).orElse(task);
+            Task t = taskRepository.findById(taskId).orElse(savedTask);
             cleanerService.startDuplicateScan(t, request);
         });
 
-        return ResponseEntity.accepted().body(new DuplicateScanResponse(task.getId(), "/api/cleaner/duplicates/stream/" + task.getId()));
+        return ResponseEntity.accepted().body(new DuplicateScanResponse(savedTask.getId(), "/api/cleaner/duplicates/stream/" + savedTask.getId()));
     }
 
     @GetMapping("/duplicates/stream/{taskId}")
@@ -103,6 +107,23 @@ public class CleanerController {
         return ResponseEntity.ok(cleanerService.getDuplicateGroups(page, size));
     }
 
+    @PostMapping("/duplicates/preview")
+    public ResponseEntity<DuplicatePreviewResponse> duplicatePreview(
+            @RequestBody(required = false) DuplicatePreviewRequest request) {
+        int page = request != null && request.getPage() >= 0 ? request.getPage() : 0;
+        int size = request != null && request.getSize() > 0 ? request.getSize() : 50;
+
+        DuplicateGroupsResponse groups = cleanerService.getDuplicateGroups(page, size);
+        String token = tokenService.generateToken("duplicate-preview-" + UUID.randomUUID());
+
+        return ResponseEntity.ok(new DuplicatePreviewResponse(
+                groups.getItems(),
+                groups.getPage(),
+                groups.getSize(),
+                groups.getTotal(),
+                token));
+    }
+
     @PostMapping("/duplicates/execute")
     public ResponseEntity<DuplicateExecuteResponse> duplicateExecute(@RequestBody DuplicateExecuteRequest request) {
         tokenService.validateToken(request.getConfirmToken())
@@ -110,10 +131,37 @@ public class CleanerController {
                         "Invalid or expired confirmation token",
                         ErrorCodes.INVALID_CONFIRM_TOKEN,
                         HttpStatus.CONFLICT));
+
+        validateDuplicateDeletion(request.getFileIds());
         tokenService.consumeToken(request.getConfirmToken());
 
         DuplicateExecuteResponse response = cleanerService.executeDuplicates(request.getFileIds());
         return ResponseEntity.ok(response);
+    }
+
+    private void validateDuplicateDeletion(List<String> fileIds) {
+        if (fileIds == null || fileIds.isEmpty()) {
+            return;
+        }
+
+        Set<String> selected = new HashSet<>(fileIds);
+        DuplicateGroupsResponse groups = cleanerService.getDuplicateGroups(0, Integer.MAX_VALUE);
+
+        for (DuplicateGroupsResponse.DuplicateGroup group : groups.getItems()) {
+            List<DuplicateGroupsResponse.DuplicateGroup.DuplicateFile> files = group.getFiles();
+            if (files == null || files.isEmpty()) {
+                continue;
+            }
+
+            boolean keepsAtLeastOne = files.stream()
+                    .anyMatch(file -> !selected.contains(file.getId()));
+            if (!keepsAtLeastOne) {
+                throw new SystemHealerException(
+                        "Cannot delete every copy in duplicate group " + group.getGroupId(),
+                        ErrorCodes.WOULD_DELETE_ALL_COPIES,
+                        HttpStatus.CONFLICT);
+            }
+        }
     }
 
     public static class CleanerExecuteRequest {
@@ -125,6 +173,18 @@ public class CleanerController {
         public void setConfirmToken(String confirmToken) { this.confirmToken = confirmToken; }
         public java.util.List<String> getPaths() { return paths; }
         public void setPaths(java.util.List<String> paths) { this.paths = paths; }
+    }
+
+    public static class DuplicatePreviewRequest {
+        private int page = 0;
+        private int size = 50;
+
+        public DuplicatePreviewRequest() {}
+
+        public int getPage() { return page; }
+        public void setPage(int page) { this.page = page; }
+        public int getSize() { return size; }
+        public void setSize(int size) { this.size = size; }
     }
 
     public static class DuplicateExecuteRequest {

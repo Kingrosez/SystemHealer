@@ -1,3 +1,5 @@
+import { useState } from 'react'
+import { toast } from 'sonner'
 import {
   Dialog,
   DialogContent,
@@ -9,6 +11,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Trash2, AlertCircle } from 'lucide-react'
 import { useUninstall } from '@/hooks/useUninstall'
+import { isApiError } from '@/lib/api'
 
 interface UninstallConfirmationDialogProps {
   open: boolean
@@ -19,6 +22,7 @@ interface UninstallConfirmationDialogProps {
   publisher?: string
   installDate?: string
   estimatedSize?: string
+  onUninstalled?: (programId: string) => void
 }
 
 export function UninstallConfirmationDialog({
@@ -30,17 +34,44 @@ export function UninstallConfirmationDialog({
   publisher,
   installDate,
   estimatedSize,
+  onUninstalled,
 }: UninstallConfirmationDialogProps) {
   const uninstall = useUninstall()
+  const [error, setError] = useState<string | null>(null)
+
+  const handleOpenChange = (next: boolean) => {
+    if (!next) {
+      setError(null)
+    }
+    onOpenChange(next)
+  }
 
   const handleConfirm = () => {
     if (!programId) return
-    uninstall.mutate({ id: programId, data: { force: false } })
-    onOpenChange(false)
+    setError(null)
+    uninstall.mutate(
+      { id: programId, data: { force: false } },
+      {
+        onSuccess: () => {
+          toast.success('Uninstall started', {
+            description: `${displayName} is being removed.`,
+          })
+          handleOpenChange(false)
+          onUninstalled?.(programId)
+        },
+        onError: (err) => {
+          setError(
+            isApiError(err)
+              ? err.userMessage
+              : 'Could not start the uninstall.'
+          )
+        },
+      }
+    )
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
@@ -99,12 +130,18 @@ export function UninstallConfirmationDialog({
               and settings.
             </span>
           </div>
+
+          {error && (
+            <p role="alert" className="text-sm text-destructive">
+              {error}
+            </p>
+          )}
         </div>
 
         <DialogFooter>
           <Button
             variant="outline"
-            onClick={() => onOpenChange(false)}
+            onClick={() => handleOpenChange(false)}
             disabled={uninstall.isPending}
           >
             Cancel

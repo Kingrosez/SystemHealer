@@ -1,4 +1,4 @@
-import { useMutation, useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { apiFetch } from '@/lib/api'
 
 export interface Program {
@@ -56,16 +56,22 @@ export function usePrograms(search = '', page = 0, size = 100) {
       ),
     staleTime: 60_000,
     retry: 2,
+    placeholderData: (previousData) => previousData,
   })
 }
 
 export function useUninstall() {
+  const queryClient = useQueryClient()
+
   return useMutation({
     mutationFn: ({ id, data }: { id: string; data?: UninstallRequest }) =>
       apiFetch<UninstallResponse>(`/programs/${id}/uninstall`, {
         method: 'POST',
         body: JSON.stringify(data ?? {}),
       }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: programsQueryKey })
+    },
   })
 }
 
@@ -80,6 +86,8 @@ export function useLeftoversPreview() {
 }
 
 export function useLeftoversExecute() {
+  const queryClient = useQueryClient()
+
   return useMutation({
     mutationFn: ({
       id,
@@ -95,5 +103,8 @@ export function useLeftoversExecute() {
           body: JSON.stringify(data),
         }
       ),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: programsQueryKey })
+    },
   })
 }

@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import {
   Dialog,
   DialogContent,
@@ -9,6 +10,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Shield, AlertCircle } from 'lucide-react'
 import { useCreateRestorePoint } from '@/hooks/useRestorePoints'
+import { isApiError } from '@/lib/api'
 
 interface RestorePointWarningDialogProps {
   open: boolean
@@ -24,8 +26,17 @@ export function RestorePointWarningDialog({
   onCreated,
 }: RestorePointWarningDialogProps) {
   const createPoint = useCreateRestorePoint()
+  const [error, setError] = useState<string | null>(null)
+
+  const handleOpenChange = (next: boolean) => {
+    if (!next) {
+      setError(null)
+    }
+    onOpenChange(next)
+  }
 
   const handleCreate = () => {
+    setError(null)
     createPoint.mutate(
       { description },
       {
@@ -33,17 +44,25 @@ export function RestorePointWarningDialog({
           onCreated?.()
           onOpenChange(false)
         },
+        onError: (err) => {
+          setError(
+            isApiError(err)
+              ? err.userMessage
+              : 'Could not create a restore point.'
+          )
+        },
       }
     )
   }
 
   const handleSkip = () => {
+    setError(null)
     onCreated?.()
     onOpenChange(false)
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
@@ -72,6 +91,12 @@ export function RestorePointWarningDialog({
               <li>System settings</li>
             </ul>
           </div>
+
+          {error && (
+            <p role="alert" className="text-sm text-destructive">
+              {error}
+            </p>
+          )}
         </div>
 
         <DialogFooter>

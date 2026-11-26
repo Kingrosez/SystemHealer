@@ -49,15 +49,15 @@ public class RecoveryController {
         }
 
         Task task = new Task(TaskType.RECOVERY, TaskStatus.RUNNING, "System restore to " + request.getPointId());
-        task = taskRepository.save(task);
+        Task savedTask = taskRepository.save(task);
 
-        final String taskId = task.getId();
+        final String taskId = savedTask.getId();
         CompletableFuture.runAsync(() -> {
-            Task t = taskRepository.findById(taskId).orElse(task);
+            Task t = taskRepository.findById(taskId).orElse(savedTask);
             recoveryService.restore(t, request.getPointId());
         });
 
-        return ResponseEntity.accepted().body(new RestoreResponse(task.getId()));
+        return ResponseEntity.accepted().body(new RestoreResponse(savedTask.getId()));
     }
 
     public static class RestoreResponse {

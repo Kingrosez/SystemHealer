@@ -1,4 +1,4 @@
-import { useMutation, useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { apiFetch } from '@/lib/api'
 
 export interface RepairOption {
@@ -19,14 +19,20 @@ export interface RepairStartRequest {
 export interface RepairStartResponse {
   taskId: string
   streamUrl: string
+  restorePointStatus?: string | null
+  restorePointToken?: string | null
+}
+
+export interface StartRepairVariables extends RepairStartRequest {
+  confirmToken?: string
 }
 
 export interface RepairHistoryItem {
   id: string
   startedAt: string
-  finishedAt: string
+  finishedAt: string | null
   actions: string[]
-  status: 'SUCCESS' | 'FAILED' | 'CANCELLED'
+  status: 'PENDING' | 'RUNNING' | 'SUCCESS' | 'FAILED' | 'CANCELLED'
   summary: { repaired: number; failed: number }
 }
 
@@ -82,12 +88,20 @@ export function useRepairDetail(id: string) {
 }
 
 export function useStartRepair() {
+  const queryClient = useQueryClient()
+
   return useMutation({
-    mutationFn: (data: RepairStartRequest) =>
+    mutationFn: ({ confirmToken, ...data }: StartRepairVariables) =>
       apiFetch<RepairStartResponse>('/repair/start', {
         method: 'POST',
         body: JSON.stringify(data),
+        headers: confirmToken
+          ? { 'X-Confirm-Token': confirmToken }
+          : undefined,
       }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: repairHistoryQueryKey })
+    },
   })
 }
 

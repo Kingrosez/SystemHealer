@@ -1,31 +1,82 @@
-import { useDuplicateScan, useDuplicateGroups, useDuplicateExecute } from '@/hooks/useCleaner'
+import { useState } from 'react'
+import {
+  useDuplicateScan,
+  useDuplicateGroups,
+  useDuplicatePreview,
+  type DuplicateGroup,
+} from '@/hooks/useCleaner'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { DuplicateDeletionDialog } from '@/components/dialogs/DuplicateDeletionDialog'
+import { isApiError } from '@/lib/api'
+import { formatBytes } from '@/lib/utils'
 import { Copy, FolderOpen, Trash2, AlertCircle } from 'lucide-react'
-import { useState } from 'react'
 
 export function DuplicateFinderPage() {
   const [roots, setRoots] = useState('D:\\')
   const [minSize, setMinSize] = useState(1024)
   const [selectedFileIds, setSelectedFileIds] = useState<string[]>([])
+  const [pendingDelete, setPendingDelete] = useState<{
+    token: string
+    fileIds: string[]
+  } | null>(null)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
+
   const scan = useDuplicateScan()
-  const { data: groups, refetch } = useDuplicateGroups()
-  const execute = useDuplicateExecute()
+  const {
+    data: groups,
+    refetch,
+    isLoading: groupsLoading,
+    error: groupsError,
+  } = useDuplicateGroups()
+  const duplicatePreview = useDuplicatePreview()
 
   const handleScan = () => {
-    scan.mutate({ roots: [roots], minSizeBytes: minSize })
+    scan.mutate(
+      { roots: [roots], minSizeBytes: minSize },
+      { onSuccess: () => refetch() }
+    )
   }
 
-  const toggleFile = (fileId: string, allCopiesSelected: boolean) => {
-    if (allCopiesSelected) {
-      // Don't allow selecting all copies in a group
-      return
-    }
-    setSelectedFileIds((prev) =>
-      prev.includes(fileId) ? prev.filter((id) => id !== fileId) : [...prev, fileId]
+  const toggleFile = (fileId: string, group: DuplicateGroup) => {
+    setSelectedFileIds((prev) => {
+      if (prev.includes(fileId)) {
+        return prev.filter((id) => id !== fileId)
+      }
+
+      const groupIds = group.files.map((file) => file.id)
+      const selectedInGroup = groupIds.filter((id) => prev.includes(id))
+      if (selectedInGroup.length >= groupIds.length - 1) {
+        return prev
+      }
+
+      return [...prev, fileId]
+    })
+  }
+
+  const handleDeleteSelected = () => {
+    setDeleteError(null)
+    duplicatePreview.mutate(
+      { page: 0, size: 50 },
+      {
+        onSuccess: (data) => {
+          setPendingDelete({
+            token: data.confirmToken,
+            fileIds: selectedFileIds,
+          })
+        },
+        onError: (err) => {
+          setDeleteError(
+            isApiError(err)
+              ? err.userMessage
+              : 'Could not prepare duplicate deletion.'
+          )
+        },
+      }
     )
   }
 
@@ -41,33 +92,44 @@ export function DuplicateFinderPage() {
       <Card className="p-4">
         <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
           <div className="md:col-span-2">
-            <label className="mb-1 block text-sm font-medium">Scan Root</label>
-            <input
+            <label htmlFor="duplicate-root" className="mb-1 block text-sm font-medium">Scan Root</label>
+            <Input
+              id="duplicate-root"
               type="text"
               value={roots}
               onChange={(e) => setRoots(e.target.value)}
-              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
               placeholder="D:\"
             />
           </div>
           <div>
-            <label className="mb-1 block text-sm font-medium">Min File Size (bytes)</label>
-            <input
+            <label htmlFor="duplicate-min-size" className="mb-1 block text-sm font-medium">Min File Size (bytes)</label>
+            <Input
+              id="duplicate-min-size"
               type="number"
+              min={0}
               value={minSize}
               onChange={(e) => setMinSize(Number(e.target.value))}
-              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
             />
           </div>
         </div>
         <div className="mt-3 flex gap-2">
-          <Button onClick={handleScan} disabled={scan.isPending}>
+          <Button
+            onClick={handleScan}
+            disabled={scan.isPending || !roots.trim()}
+          >
             {scan.isPending ? 'Scanning...' : 'Scan for Duplicates'}
           </Button>
           <Button variant="outline" onClick={() => refetch()} disabled={!groups}>
             Refresh Groups
           </Button>
         </div>
+        {scan.isError && (
+          <p className="mt-2 text-sm text-destructive">
+            {isApiError(scan.error)
+              ? scan.error.userMessage
+              : 'Could not start the duplicate scan.'}
+          </p>
+        )}
       </Card>
 
       {scan.isPending && (
@@ -77,11 +139,31 @@ export function DuplicateFinderPage() {
         </Card>
       )}
 
-      {groups && groups.items.length > 0 ? (
+      {groupsError && (
+        <Alert variant="destructive">
+          <AlertCircle className="h-4 w-4" />
+          <AlertTitle>Unable to load duplicate groups</AlertTitle>
+          <AlertDescription>
+            {isApiError(groupsError)
+              ? groupsError.userMessage
+              : 'Could not fetch duplicate groups.'}
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {groupsLoading && !groups ? (
         <Card className="p-4">
-          <h3 className="mb-3 font-semibold">
+          <Skeleton className="h-4 w-1/3" />
+          <Skeleton className="mt-2 h-4 w-2/3" />
+        </Card>
+      ) : groups && groups.items.length > 0 ? (
+        <Card className="p-4">
+          <h3 className="mb-1 font-semibold">
             {groups.total} duplicate group(s) found
           </h3>
+          <p className="mb-3 text-xs text-muted-foreground">
+            Select files to delete. At least one copy of each file must remain.
+          </p>
           <div className="max-h-96 space-y-4 overflow-y-auto">
             {groups.items.map((group) => (
               <div key={group.groupId} className="rounded-md border p-3">
@@ -89,26 +171,21 @@ export function DuplicateFinderPage() {
                   <div className="flex items-center gap-2">
                     <Copy className="h-4 w-4 text-muted-foreground" />
                     <span className="font-medium">
-                      {group.files.length} copies ·{' '}
-                      {group.sizeBytes.toLocaleString()} bytes
+                      {group.files.length} copies · {formatBytes(group.sizeBytes)}
                     </span>
                   </div>
                   <Badge variant="secondary">{group.hash.slice(0, 12)}...</Badge>
                 </div>
                 <div className="ml-6 space-y-1">
                   {group.files.map((file) => {
-                    const allSelected =
-                      group.files.length === selectedFileIds.length &&
-                      group.files.every((f) => selectedFileIds.includes(f.id))
                     const isLastCopy = group.files.length === 1
                     return (
                       <div key={file.id} className="flex items-center gap-2 text-sm">
                         <input
                           type="checkbox"
+                          aria-label={`${isLastCopy ? 'Keep' : 'Select'} ${file.path}`}
                           checked={selectedFileIds.includes(file.id)}
-                          onChange={() =>
-                            toggleFile(file.id, allSelected || isLastCopy)
-                          }
+                          onChange={() => toggleFile(file.id, group)}
                           disabled={isLastCopy}
                         />
                         <FolderOpen className="h-3 w-3 flex-shrink-0 text-muted-foreground" />
@@ -120,19 +197,26 @@ export function DuplicateFinderPage() {
               </div>
             ))}
           </div>
-          <div className="mt-4">
+
+          {deleteError && (
+            <p className="mt-3 text-sm text-destructive">{deleteError}</p>
+          )}
+
+          <div className="mt-4 flex items-center justify-between">
+            <p className="text-sm text-muted-foreground">
+              {selectedFileIds.length} file(s) selected
+            </p>
             <Button
               variant="destructive"
-              disabled={selectedFileIds.length === 0 || execute.isPending}
-              onClick={() =>
-                execute.mutate({
-                  confirmToken: 'tok_dupe',
-                  fileIds: selectedFileIds,
-                })
+              disabled={
+                selectedFileIds.length === 0 || duplicatePreview.isPending
               }
+              onClick={handleDeleteSelected}
             >
               <Trash2 className="mr-2 h-4 w-4" />
-              Delete {selectedFileIds.length} duplicate file(s)
+              {duplicatePreview.isPending
+                ? 'Preparing...'
+                : `Delete ${selectedFileIds.length} duplicate file(s)`}
             </Button>
           </div>
         </Card>
@@ -145,6 +229,22 @@ export function DuplicateFinderPage() {
           </AlertDescription>
         </Alert>
       ) : null}
+
+      <DuplicateDeletionDialog
+        open={pendingDelete !== null}
+        onOpenChange={(next) => {
+          if (!next) {
+            setPendingDelete(null)
+          }
+        }}
+        confirmToken={pendingDelete?.token}
+        duplicates={groups?.items}
+        fileIds={pendingDelete?.fileIds}
+        onFinished={() => {
+          setSelectedFileIds([])
+          refetch()
+        }}
+      />
     </div>
   )
 }

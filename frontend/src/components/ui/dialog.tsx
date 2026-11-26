@@ -8,6 +8,8 @@ import { X } from "lucide-react";
 interface DialogContextValue {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  titleId: string;
+  descriptionId: string;
 }
 
 const DialogContext = React.createContext<DialogContextValue | null>(null);
@@ -19,22 +21,18 @@ interface DialogProps {
 }
 
 const Dialog = ({ open = false, onOpenChange, children }: DialogProps) => {
-  const [internalOpen, setInternalOpen] = React.useState(open);
-
-  React.useEffect(() => {
-    setInternalOpen(open);
-  }, [open]);
+  const titleId = React.useId();
+  const descriptionId = React.useId();
 
   const handleOpenChange = React.useCallback(
     (next: boolean) => {
-      setInternalOpen(next);
       onOpenChange?.(next);
     },
     [onOpenChange]
   );
 
   React.useEffect(() => {
-    if (!internalOpen) return;
+    if (!open) return;
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
@@ -44,10 +42,10 @@ const Dialog = ({ open = false, onOpenChange, children }: DialogProps) => {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [internalOpen, handleOpenChange]);
+  }, [open, handleOpenChange]);
 
   return (
-    <DialogContext.Provider value={{ open: internalOpen, onOpenChange: handleOpenChange }}>
+    <DialogContext.Provider value={{ open, onOpenChange: handleOpenChange, titleId, descriptionId }}>
       {children}
     </DialogContext.Provider>
   );
@@ -91,7 +89,7 @@ const DialogOverlay = ({ className, onClick }: DialogOverlayProps) => {
   return (
     <div
       className={cn(
-        "fixed inset-0 z-50 bg-background/80 backdrop-blur-sm",
+        "fixed inset-0 z-50 bg-background/80 backdrop-blur-sm animate-dialog-overlay-in",
         className
       )}
       onClick={onClick}
@@ -106,6 +104,64 @@ interface DialogContentProps {
 
 const DialogContent = ({ className, children }: DialogContentProps) => {
   const ctx = React.useContext(DialogContext);
+  const dialogRef = React.useRef<HTMLDivElement>(null);
+  const open = Boolean(ctx?.open);
+
+  React.useEffect(() => {
+    if (!open) return;
+
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+
+    const previouslyFocused =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
+
+    const focusableSelector =
+      'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+    const getFocusable = () =>
+      Array.from(dialog.querySelectorAll<HTMLElement>(focusableSelector)).filter(
+        (element) => element.offsetParent !== null
+      );
+
+    const firstFocusable = getFocusable()[0] ?? dialog;
+    firstFocusable.focus();
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Tab") return;
+
+      const focusable = getFocusable();
+      if (focusable.length === 0) {
+        event.preventDefault();
+        dialog.focus();
+        return;
+      }
+
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
+      document.body.style.overflow = previousOverflow;
+      if (previouslyFocused && document.contains(previouslyFocused)) {
+        previouslyFocused.focus();
+      }
+    };
+  }, [open]);
 
   if (!ctx || !ctx.open) return null;
 
@@ -113,13 +169,14 @@ const DialogContent = ({ className, children }: DialogContentProps) => {
     <DialogPortal>
       <DialogOverlay onClick={() => ctx.onOpenChange(false)} />
       <div
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
+        aria-labelledby={ctx.titleId}
+        aria-describedby={ctx.descriptionId}
+        tabIndex={-1}
         className={cn(
-          "fixed left-1/2 top-1/2 z-50 grid w-[calc(100%-2rem)] max-w-lg -translate-x-1/2 -translate-y-1/2 gap-4 rounded-lg border bg-background p-6 shadow-lg duration-200",
-          "animate-in fade-in-0 zoom-in-95",
-          "data-[state=open]:animate-in data-[state=closed]:animate-out",
-          "data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
+          "fixed left-1/2 top-1/2 z-50 grid w-[calc(100%-2rem)] max-w-lg -translate-x-1/2 -translate-y-1/2 gap-4 rounded-lg border bg-background p-6 shadow-lg animate-dialog-content-in focus:outline-none",
           className
         )}
       >
@@ -166,25 +223,33 @@ DialogFooter.displayName = "DialogFooter";
 const DialogTitle = ({
   className,
   ...props
-}: React.HTMLAttributes<HTMLHeadingElement>) => (
-  <h2
-    className={cn(
-      "text-lg font-semibold leading-none tracking-tight",
-      className
-    )}
-    {...props}
-  />
-);
+}: React.HTMLAttributes<HTMLHeadingElement>) => {
+  const ctx = React.useContext(DialogContext);
+  return (
+    <h2
+      id={ctx?.titleId}
+      className={cn(
+        "text-lg font-semibold leading-none tracking-tight",
+        className
+      )}
+      {...props}
+    />
+  );
+};
 
 const DialogDescription = ({
   className,
   ...props
-}: React.HTMLAttributes<HTMLParagraphElement>) => (
-  <p
-    className={cn("text-sm text-muted-foreground", className)}
-    {...props}
-  />
-);
+}: React.HTMLAttributes<HTMLParagraphElement>) => {
+  const ctx = React.useContext(DialogContext);
+  return (
+    <p
+      id={ctx?.descriptionId}
+      className={cn("text-sm text-muted-foreground", className)}
+      {...props}
+    />
+  );
+};
 
 export {
   Dialog,

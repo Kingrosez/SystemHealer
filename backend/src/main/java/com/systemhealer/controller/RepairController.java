@@ -13,13 +13,23 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-import java.time.ZonedDateTime;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Comparator;
+import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 
 @RestController
 @RequestMapping("/api/repair")
 public class RepairController {
+
+    private static final long RESTORE_POINT_TOKEN_TTL_SECONDS = 300;
+
+    private final Map<String, Instant> restorePointTokens = new ConcurrentHashMap<>();
 
     @Autowired
     private RepairService repairService;
@@ -38,34 +48,51 @@ public class RepairController {
             @RequestHeader(value = "X-Confirm-Token", required = false) String confirmToken) {
 
         // Check for restore point token if creating restore point
-        if (request.isCreateRestorePoint() && confirmToken == null) {
+        if (request.isCreateRestorePoint() && !consumeRestorePointToken(confirmToken)) {
             String token = generateRestorePointToken();
             return ResponseEntity
                     .status(HttpStatus.CONFLICT)
-                    .body(new RepairStartResponse(null, "/api/repair/stream/" + null, "restore_point_required", token));
+                    .body(new RepairStartResponse(null, null, "restore_point_required", token));
         }
 
         Task task = new Task(TaskType.REPAIR, TaskStatus.RUNNING, "Repair scan: " + request.getActions());
-        task = taskRepository.save(task);
+        Task savedTask = taskRepository.save(task);
 
         // Start repair asynchronously
-        final String taskId = task.getId();
+        final String taskId = savedTask.getId();
         CompletableFuture.runAsync(() -> {
-            Task t = taskRepository.findById(taskId).orElse(task);
+            Task t = taskRepository.findById(taskId).orElse(savedTask);
             repairService.startRepair(t, request);
         });
 
-        String streamUrl = "/api/repair/stream/" + task.getId();
-        RepairStartResponse response = new RepairStartResponse(task.getId(), streamUrl, null, null);
+        String streamUrl = "/api/repair/stream/" + savedTask.getId();
+        RepairStartResponse response = new RepairStartResponse(savedTask.getId(), streamUrl, null, null);
 
         return ResponseEntity.accepted().body(response);
     }
 
     /**
-     * Generate a restore point confirmation token.
+     * Generate a single-use restore point confirmation token.
      */
     private String generateRestorePointToken() {
-        return "rp_" + System.currentTimeMillis();
+        Instant now = Instant.now();
+        restorePointTokens.entrySet().removeIf(entry -> entry.getValue().isBefore(now));
+
+        String token = "rp_" + UUID.randomUUID();
+        restorePointTokens.put(token, now.plusSeconds(RESTORE_POINT_TOKEN_TTL_SECONDS));
+        return token;
+    }
+
+    /**
+     * Consume a restore point token, returning true when it is valid and unused.
+     */
+    private boolean consumeRestorePointToken(String token) {
+        if (token == null) {
+            return false;
+        }
+
+        Instant expiry = restorePointTokens.remove(token);
+        return expiry != null && expiry.isAfter(Instant.now());
     }
 
     @GetMapping("/stream/{taskId}")
@@ -105,10 +132,71 @@ public class RepairController {
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "50") int size) {
 
-        // In production, use Pageable and proper pagination
-        // For now, return empty structure
+        int safePage = Math.max(0, page);
+        int safeSize = Math.max(1, Math.min(size, 200));
+
+        List<Task> tasks = new ArrayList<>(taskRepository.findByType(TaskType.REPAIR));
+        tasks.sort(Comparator.comparing(Task::getStartedAt).reversed());
+
+        int from = Math.min(safePage * safeSize, tasks.size());
+        int to = Math.min(from + safeSize, tasks.size());
+
+        List<RepairHistoryItem> items = tasks.subList(from, to).stream()
+                .map(this::toHistoryItem)
+                .toList();
+
         RepairHistoryResponse response = new RepairHistoryResponse();
+        response.setItems(items);
+        response.setPage(safePage);
+        response.setSize(safeSize);
+        response.setTotal(tasks.size());
         return ResponseEntity.ok(response);
+    }
+
+    private RepairHistoryItem toHistoryItem(Task task) {
+        RepairHistoryItem item = new RepairHistoryItem();
+        item.setId(task.getId());
+        item.setStartedAt(task.getStartedAt() != null ? task.getStartedAt().toString() : null);
+        item.setFinishedAt(
+                task.getStatus() == TaskStatus.RUNNING || task.getStatus() == TaskStatus.PENDING
+                        ? null
+                        : task.getUpdatedAt().toString());
+        item.setStatus(task.getStatus().name());
+
+        List<String> actions = parseActions(task.getDescription());
+        item.setActions(actions);
+
+        RepairSummary summary = new RepairSummary();
+        if (task.getStatus() == TaskStatus.SUCCESS) {
+            summary.setRepaired(actions.size());
+        } else if (task.getStatus() == TaskStatus.FAILED) {
+            summary.setFailed(actions.size());
+        }
+        item.setSummary(summary);
+
+        return item;
+    }
+
+    private List<String> parseActions(String description) {
+        if (description == null) {
+            return List.of();
+        }
+
+        int start = description.indexOf('[');
+        int end = description.lastIndexOf(']');
+        if (start < 0 || end <= start) {
+            return List.of();
+        }
+
+        String inner = description.substring(start + 1, end).trim();
+        if (inner.isEmpty()) {
+            return List.of();
+        }
+
+        return Arrays.stream(inner.split(","))
+                .map(String::trim)
+                .filter(action -> !action.isEmpty())
+                .toList();
     }
 
     @GetMapping("/history/{id}")
