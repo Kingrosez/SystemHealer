@@ -1,6 +1,8 @@
 package com.systemhealer.controller;
 
 import com.systemhealer.api.SystemInfo;
+import com.systemhealer.service.SystemInfoService;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -9,16 +11,11 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api")
 public class SystemInfoController {
 
+    @Autowired
+    private SystemInfoService systemInfoService;
+
     @GetMapping("/system/info")
     public SystemInfo systemInfo() {
-        return new SystemInfo(
-                "Windows 11 Pro 23H2",
-                "22631",
-                "Intel Core i7-12700",
-                32,
-                true,
-                false,
-                true
-        );
+        return systemInfoService.getSystemInfo();
     }
 }

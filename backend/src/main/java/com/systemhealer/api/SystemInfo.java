@@ -39,7 +39,7 @@ public class SystemInfo {
     public void setRamGb(int ramGb) { this.ramGb = ramGb; }
 
     public boolean isAdmin() { return isAdmin; }
-    public void setAdmin(boolean admin) { isAdmin = admin; }
+    public void setAdmin(boolean admin) { this.isAdmin = admin; }
 
     public boolean isBitLockerEnabled() { return bitLockerEnabled; }
     public void setBitLockerEnabled(boolean bitLockerEnabled) { bitLockerEnabled = bitLockerEnabled; }

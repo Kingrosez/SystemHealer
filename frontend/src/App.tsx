@@ -1,8 +1,9 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { createHashRouter, RouterProvider, Outlet } from 'react-router-dom'
+import { createHashRouter, RouterProvider, Outlet, Link } from 'react-router-dom'
 import { Toaster } from '@/components/ui/sonner'
 import { Sidebar } from '@/components/sidebar/Sidebar'
 import { HealthBadge } from '@/components/HealthBadge'
+import { useSystemInfo } from '@/hooks/useHealth'
 import { useSettings } from '@/hooks/useSettings'
 import { useTheme } from '@/lib/theme'
 import { DashboardPage } from '@/pages/DashboardPage'
@@ -17,6 +18,8 @@ import { StartupManagerPage } from '@/pages/StartupManagerPage'
 import { HistoryPage } from '@/pages/HistoryPage'
 import { SettingsPage } from '@/pages/SettingsPage'
 import { NotFoundPage } from '@/pages/NotFoundPage'
+import { Badge } from '@/components/ui/badge'
+import { Settings, ShieldCheck } from 'lucide-react'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -33,6 +36,7 @@ const queryClient = new QueryClient({
 
 function Layout() {
   const { data: settings } = useSettings()
+  const { data: systemInfo } = useSystemInfo()
   useTheme(settings?.theme)
 
   return (
@@ -45,8 +49,24 @@ function Layout() {
       </a>
       <Sidebar />
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex shrink-0 items-center justify-end border-b border-border px-6 py-3">
-          <HealthBadge />
+        <header className="flex shrink-0 items-center justify-between border-b border-border px-4 py-2 md:px-6">
+          <div className="flex items-center gap-2">
+            <ShieldCheck className="h-5 w-5 text-primary" />
+            <span className="font-semibold text-lg text-foreground">SystemHealer</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <Badge variant={systemInfo?.isAdmin ? 'default' : 'secondary'}>
+              {systemInfo?.isAdmin ? 'Administrator' : 'Standard User'}
+            </Badge>
+            <Link
+              to="/settings"
+              className="rounded-full p-1.5 hover:bg-accent transition-colors"
+              aria-label="Settings"
+            >
+              <Settings className="h-5 w-5 text-muted-foreground" />
+            </Link>
+            <HealthBadge />
+          </div>
         </header>
         <main
           id="main-content"
